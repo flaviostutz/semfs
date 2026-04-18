@@ -50,3 +50,29 @@ def test_chunks_cli_reports_actionable_digest_errors(sample_docs: Path, fake_mod
 
     assert result.exit_code == 1
     assert "live file no longer matches the indexed snapshot" in result.output
+
+
+def test_files_cli_outputs_ranked_deduplicated_paths(sample_docs: Path, fake_model: object, tmp_path: Path) -> None:
+    _ = fake_model
+    runner = CliRunner()
+    config_path = tmp_path / ".semfsrc"
+    config_path.write_text(json.dumps(_config_payload()), encoding="utf-8")
+
+    result = runner.invoke(app, ["files", str(sample_docs), "alpha", "--config", str(config_path), "--top", "5"])
+
+    assert result.exit_code == 0
+    assert result.output.splitlines() == ["alpha.md", "beta.md"]
+
+
+def test_files_cli_breaks_ties_by_path(sample_docs: Path, fake_model: object, tmp_path: Path) -> None:
+    _ = fake_model
+    runner = CliRunner()
+    config_path = tmp_path / ".semfsrc"
+    config_path.write_text(json.dumps(_config_payload()), encoding="utf-8")
+    (sample_docs / "aardvark.md").write_text("# Aardvark\nalpha\n", encoding="utf-8")
+    (sample_docs / "zebra.md").write_text("# Zebra\nalpha\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["files", str(sample_docs), "alpha", "--config", str(config_path), "--top", "2"])
+
+    assert result.exit_code == 0
+    assert result.output.splitlines() == ["aardvark.md", "zebra.md"]

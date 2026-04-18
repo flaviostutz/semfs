@@ -98,3 +98,25 @@ def test_chunks_fail_when_contents_digest_mismatches(sample_docs: Path, fake_mod
 
     with pytest.raises(FileProcessingError):
         semfs.chunks({"text": "alpha", "max_results": 5}, str(sample_docs), fetch_contents=True, config=config)
+
+
+def test_files_query_deduplicates_and_ranks_by_best_match(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    config = parse_index_config(_config_payload())
+
+    findings = semfs.files({"text": "alpha", "max_results": 5}, str(sample_docs), config=config)
+
+    assert [finding.file for finding in findings] == ["alpha.md", "beta.md"]
+    assert findings[0].best_score > findings[1].best_score
+
+
+def test_files_query_breaks_score_ties_by_path(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    config = parse_index_config(_config_payload())
+    (sample_docs / "aardvark.md").write_text("# Aardvark\nalpha\n", encoding="utf-8")
+    (sample_docs / "zebra.md").write_text("# Zebra\nalpha\n", encoding="utf-8")
+
+    findings = semfs.files({"text": "alpha", "max_results": 2}, str(sample_docs), config=config)
+
+    assert [finding.file for finding in findings] == ["aardvark.md", "zebra.md"]
+    assert findings[0].best_score == findings[1].best_score

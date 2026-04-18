@@ -94,14 +94,16 @@ def files(
     config: Annotated[Path | None, typer.Option("--config", help="Path to a JSON config file.")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
-    """Return scaffolded file results."""
+    """Return deduplicated file query results."""
     try:
         loaded_config = _require_loaded_config(config)
         results = semfs.files(
             {"text": query, "max_results": top, "max_distance": distance}, str(directory), loaded_config
         )
+        for finding in results:
+            typer.echo(finding.file)
         if verbose:
-            typer.echo(f"Returned {len(results)} scaffold file results for {directory}")
+            typer.echo(f"Returned {len(results)} file results for {directory}")
     except SemfsError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc

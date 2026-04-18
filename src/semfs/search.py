@@ -1,5 +1,6 @@
 """Search entry points for semfs."""
 
+import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,33 @@ def _candidate_k(query: QueryRequest) -> int:
 
 def _score_from_distance(distance: float) -> float:
     return 1.0 / (1.0 + distance)
+
+
+def _matching_chunk_rows(connection: sqlite3.Connection, query: QueryRequest, model_name: str) -> list[sqlite3.Row]:
+    model = load_embedding_model(model_name)
+    query_vector = model.encode([query.text], normalize_embeddings=True)[0]
+    rows = fetch_chunk_candidates(
+        connection,
+        serialize_embedding([float(value) for value in query_vector]),
+        _candidate_k(query),
+    )
+    return [row for row in rows if query.max_distance is None or float(row["distance"]) <= query.max_distance]
+
+
+def _chunk_findings_from_rows(rows: list[sqlite3.Row]) -> list[ChunkFinding]:
+    findings = [
+        ChunkFinding.model_validate(
+            {
+                "file": str(row["file_path"]),
+                "from": int(row["start_line"]),
+                "to": int(row["end_line"]),
+                "score": _score_from_distance(float(row["distance"])),
+            }
+        )
+        for row in rows
+    ]
+    merged = merge_contiguous_findings(findings)
+    return sorted(merged, key=lambda finding: (-finding.score, finding.file, finding.from_line))
 
 
 def _read_excerpt(root: Path, finding: ChunkFinding, expected_digest: str) -> str:
@@ -53,29 +81,8 @@ def chunks(
     parsed_config = parse_index_config(config)
 
     with open_prepared_index(directory, parsed_config) as prepared:
-        model = load_embedding_model(parsed_config.model)
-        query_vector = model.encode([parsed_query.text], normalize_embeddings=True)[0]
-        rows = fetch_chunk_candidates(
-            prepared.connection,
-            serialize_embedding([float(value) for value in query_vector]),
-            _candidate_k(parsed_query),
-        )
-
-        findings = [
-            ChunkFinding.model_validate(
-                {
-                    "file": str(row["file_path"]),
-                    "from": int(row["start_line"]),
-                    "to": int(row["end_line"]),
-                    "score": _score_from_distance(float(row["distance"])),
-                }
-            )
-            for row in rows
-            if parsed_query.max_distance is None or float(row["distance"]) <= parsed_query.max_distance
-        ]
-
-        merged = merge_contiguous_findings(findings)
-        ranked = sorted(merged, key=lambda finding: (-finding.score, finding.file, finding.from_line))
+        rows = _matching_chunk_rows(prepared.connection, parsed_query, parsed_config.model)
+        ranked = _chunk_findings_from_rows(rows)
         final = ranked[: parsed_query.max_results]
 
         if not fetch_contents:
@@ -102,8 +109,23 @@ def files(
     directory: str,
     config: IndexConfig | Mapping[str, Any] | None = None,
 ) -> list[FileFinding]:
-    """Validate inputs and return an empty file result set until search is implemented."""
-    _ = directory
-    parse_query_request(query)
-    parse_index_config(config)
-    return []
+    """Return ranked file findings derived from semantic chunk candidates."""
+    parsed_query = parse_query_request(query)
+    parsed_config = parse_index_config(config)
+
+    with open_prepared_index(directory, parsed_config) as prepared:
+        rows = _matching_chunk_rows(prepared.connection, parsed_query, parsed_config.model)
+
+    best_distances: dict[str, float] = {}
+    for row in rows:
+        file_path = str(row["file_path"])
+        distance = float(row["distance"])
+        best_distance = best_distances.get(file_path)
+        if best_distance is None or distance < best_distance:
+            best_distances[file_path] = distance
+
+    ranked = sorted(best_distances.items(), key=lambda item: (item[1], item[0]))
+    return [
+        FileFinding.model_validate({"file": file_path, "best_score": _score_from_distance(distance)})
+        for file_path, distance in ranked[: parsed_query.max_results]
+    ]

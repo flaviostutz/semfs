@@ -70,14 +70,14 @@
 
 ### Tests for User Story 2
 
-- [ ] T022 [P] [US2] Add file-ranking, tie-break, and dedup unit tests in `tests/test_search.py`
-- [ ] T023 [P] [US2] Add file-query CLI tests in `tests/test_cli.py`
+- [x] T022 [P] [US2] Add file-ranking, tie-break, and dedup unit tests in `tests/test_search.py`
+- [x] T023 [P] [US2] Add file-query CLI tests in `tests/test_cli.py`
 
 ### Implementation for User Story 2
 
-- [ ] T024 [US2] Implement file-level aggregation in `src/semfs/search.py` by grouping `chunk_index` matches on `file_path`, using `MIN(distance)` as `best_score`, and breaking ties by relative path ascending
-- [ ] T025 [US2] Expose `semfs.files()` in `src/semfs/__init__.py`
-- [ ] T026 [US2] Implement `semfs files DIR QUERY` in `src/semfs/cli.py` with deduplicated descending relevance output based on the best file match
+- [x] T024 [US2] Implement file-level aggregation in `src/semfs/search.py` by grouping `chunk_index` matches on `file_path`, using `MIN(distance)` as `best_score`, and breaking ties by relative path ascending
+- [x] T025 [US2] Expose `semfs.files()` in `src/semfs/__init__.py`
+- [x] T026 [US2] Implement `semfs files DIR QUERY` in `src/semfs/cli.py` with deduplicated descending relevance output based on the best file match
 
 **Checkpoint**: File search works independently on top of the same index and query pipeline.
 
