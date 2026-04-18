@@ -13,6 +13,8 @@ make test
 uv run semfs --help
 ```
 
+Create `.semfsrc` as UTF-8 JSON before running indexed commands. The configured embedding model must be available locally before offline indexing, querying, or benchmark runs.
+
 ## CLI Examples
 
 ```sh
@@ -35,6 +37,8 @@ uv run semfs files docs "what is x?" --top 5
 uv run semfs index docs --config .semfsrc
 ```
 
+Benchmark artifacts are written as JSON files under `benchmarks/` and preserved across planned runs unless they are removed explicitly.
+
 ## Library Examples
 
 ```python
@@ -56,8 +60,15 @@ print(state.status)
 import semfs
 
 query = {"text": "what is x?", "max_results": 5}
-print(semfs.chunks(query, "docs", False, {}))
-print(semfs.files(query, "docs", {}))
+config = {
+	"name": "index0",
+	"filter": "**/*.md",
+	"mode": "auto",
+	"chunking": {"size": 500, "overlap": 250, "edges": "auto"},
+	"model": "sentence-transformers/all-MiniLM-L6-v2",
+}
+print(semfs.chunks(query, "docs", False, config))
+print(semfs.files(query, "docs", config))
 ```
 
 ## Layout

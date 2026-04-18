@@ -32,10 +32,12 @@ The public module remains `semfs` and exposes one indexing entry point plus one 
   - Honors the configured index mode, including building or refreshing the index on demand when the query requires it
   - Defaults to 10 results when `query.max_results` is omitted
   - Applies no distance filtering when `query.max_distance` is omitted
+  - Exposes `ChunkFinding` fields as `file`, `from`, `to`, `score`, and optional `contents`, with `from` and `to` as inclusive merged line numbers
   - Merges directly contiguous findings from the same file before returning results
   - Returns file paths relative to the indexed directory
   - Includes `contents` only when `fetch_contents=True`
   - Fails the whole query with an actionable error if `fetch_contents=True` and any selected file no longer matches the indexed snapshot or cannot be read
+  - Fails with an actionable error if the configured model is not available locally, including when a reusable index references that model
 
 ### `semfs.files(query, dir, config)`
 
@@ -54,7 +56,7 @@ The public module remains `semfs` and exposes one indexing entry point plus one 
 
 ## Error Contract
 
-The library raises typed domain exceptions for invalid config, missing indexes in unsupported states, unavailable models, or unreadable files.
+The library raises typed domain exceptions for invalid config, missing indexes in unsupported states, unavailable models, including reusable indexes whose stored model is not available locally, or unreadable files.
 
 Library exception messages are actionable only when they include all of the following that are known at the failure point:
 

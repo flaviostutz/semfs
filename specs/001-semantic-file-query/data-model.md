@@ -16,6 +16,8 @@ Represents the caller-supplied indexing and query settings for one named index.
 | `chunking.edges` | enum | Yes | `auto` applies markdown-aware chunking to markdown files and fixed chunking otherwise; `fixed` always uses fixed chunking |
 | `model` | string | Yes | Installed local embedding model identifier |
 
+Supported indexed inputs are UTF-8-readable text files selected by the filter. Binary files, unreadable files, and other unsupported non-text inputs are skipped.
+
 ### IndexState
 
 Represents one materialized index for one directory and one named configuration.
@@ -43,6 +45,8 @@ Represents the last indexed state of one file.
 | `size_bytes` | integer | Yes | Used for auto-mode drift detection |
 | `modified_time` | datetime | Yes | Used for auto-mode drift detection |
 | `content_digest` | string | Yes | Digest of the indexed file contents used to verify live-file excerpt consistency |
+`content_digest` uses SHA-256 over the UTF-8 text contents that were indexed. Changing that compatibility rule requires a schema-version change.
+
 | `chunk_count` | integer | Yes | Number of chunks emitted for this file |
 | `last_indexed_at` | datetime | Yes | Audit field for rebuilds |
 
@@ -71,6 +75,8 @@ Represents a semantic query submitted to either `chunks()` or `files()`.
 ### ChunkFinding
 
 Represents a chunk-level query result returned to callers.
+
+The public field names are `file`, `from`, `to`, `score`, and optional `contents`. CLI rendering may format the same range as `path[from:to]`, but the library result contract uses the field names below.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -103,6 +109,8 @@ Represents one recorded benchmark execution.
 | `query_seconds` | float | Yes | Elapsed query time |
 | `artifact_path` | string | Yes | Persisted artifact path under the repository-level `benchmarks/` directory |
 | `recorded_at` | datetime | Yes | Time of the benchmark run |
+
+Benchmark artifacts are JSON records. Each planned run writes its own artifact and does not overwrite prior benchmark artifacts unless the caller explicitly removes them. The deterministic corpus generator rules for each dataset are part of the public benchmark contract.
 
 ## Relationships
 

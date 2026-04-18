@@ -25,13 +25,13 @@
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T006 Implement config and query models in `src/semfs/models.py` and `src/semfs/config.py` for `IndexConfig`, `QueryRequest`, `ChunkFinding`, `FileFinding`, and `IndexState`
-- [ ] T007 [P] Implement typed domain exceptions in `src/semfs/errors.py` for config, index-state, model, and file-processing failures
-- [ ] T008 [P] Implement chunking primitives in `src/semfs/chunking.py` so `chunking.edges="auto"` uses markdown-aware chunking for markdown files and fixed overlapping windows otherwise, while `chunking.edges="fixed"` always uses fixed windows, with line-range tracking and contiguous-merge helpers
-- [ ] T009 Implement SQLite connection management and sqlite-vec extension loading in `src/semfs/storage.py`
-- [ ] T010 Implement schema creation in `src/semfs/storage.py` for `index_meta`, `file_snapshots` with `content_digest`, and a single `chunk_index USING vec0(...)` table that stores embeddings plus chunk result fields without storing file contents in the index
-- [ ] T011 Implement index metadata and freshness helpers in `src/semfs/storage.py` for schema versioning, chunking fingerprinting, `auto` drift detection, and per-file content digest persistence
-- [ ] T012 Implement embedding-model loading utilities in `src/semfs/indexer.py` or `src/semfs/search.py` with one shared sentence-transformers loader per configured model
+- [x] T006 Implement config and query models in `src/semfs/models.py` and `src/semfs/config.py` for `IndexConfig`, `QueryRequest`, `ChunkFinding`, `FileFinding`, and `IndexState`
+- [x] T007 [P] Implement typed domain exceptions in `src/semfs/errors.py` for config, index-state, model, and file-processing failures
+- [x] T008 [P] Implement chunking primitives in `src/semfs/chunking.py` so `chunking.edges="auto"` uses markdown-aware chunking for markdown files and fixed overlapping windows otherwise, while `chunking.edges="fixed"` always uses fixed windows, with line-range tracking and contiguous-merge helpers
+- [x] T009 Implement SQLite connection management and sqlite-vec extension loading in `src/semfs/storage.py`
+- [x] T010 Implement schema creation in `src/semfs/storage.py` for `index_meta`, `file_snapshots` with `content_digest`, and a single `chunk_index USING vec0(...)` table that stores embeddings plus chunk result fields without storing file contents in the index
+- [x] T011 Implement index metadata and freshness helpers in `src/semfs/storage.py` for schema versioning, chunking fingerprinting, `auto` drift detection, and per-file content digest persistence
+- [x] T012 Implement embedding-model loading utilities in `src/semfs/indexer.py` or `src/semfs/search.py` with one shared sentence-transformers loader per configured model
 
 **Checkpoint**: The project can validate configuration, open SQLite databases with sqlite-vec enabled, and create empty index schemas.
 

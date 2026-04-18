@@ -25,7 +25,7 @@
 
 ## 3. Config format and discovery
 
-**Decision**: Treat `.semfsrc` as a JSON configuration file discovered from the current working directory by default, with `--config` as the explicit override.
+**Decision**: Treat `.semfsrc` as a UTF-8 JSON configuration file discovered from the current working directory by default, with `--config` as the explicit override.
 
 **Rationale**: The spec already fixes the filename and `--config` behavior. JSON keeps discovery aligned with the CLI standard, maps directly to the configuration object in the feature spec, and avoids introducing another serialization format before the project has even been scaffolded.
 
@@ -55,9 +55,9 @@
 
 ## 6. Benchmark and integration-test strategy
 
-**Decision**: Generate deterministic synthetic markdown corpora from seeded templates inside pytest fixtures, run real indexing and query flows in integration tests, and record elapsed times as artifacts under the repository-level `benchmarks/` directory without using strict timing assertions.
+**Decision**: Generate deterministic synthetic markdown corpora from seeded templates inside pytest fixtures, run real indexing and query flows in integration tests, and record elapsed times as JSON artifacts under the repository-level `benchmarks/` directory without using strict timing assertions. Each planned run should preserve prior artifacts unless the caller explicitly removes them.
 
-**Rationale**: This satisfies the requirement to benchmark both small and large corpora while avoiding flaky tests. Deterministic generation keeps the repo small and makes the corpora reproducible across machines and CI.
+**Rationale**: This satisfies the requirement to benchmark both small and large corpora while avoiding flaky tests. Deterministic generation keeps the repo small and makes the corpora reproducible across machines and CI, and it defines the public reproducibility contract for the benchmark datasets.
 
 **Alternatives considered**:
 - Commit static large fixtures: makes the repository heavy and harder to evolve.

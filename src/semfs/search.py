@@ -1,22 +1,32 @@
-"""Search entry points for the semfs scaffold."""
+"""Search entry points for semfs."""
 
+from collections.abc import Mapping
 from typing import Any
 
-from semfs.models import ChunkFinding, FileFinding
+from semfs.config import parse_index_config, parse_query_request
+from semfs.models import ChunkFinding, FileFinding, IndexConfig, QueryRequest
 
 
 def chunks(
-    query: dict[str, Any],
+    query: QueryRequest | Mapping[str, Any],
     directory: str,
     fetch_contents: bool = False,
-    config: dict[str, Any] | None = None,
+    config: IndexConfig | Mapping[str, Any] | None = None,
 ) -> list[ChunkFinding]:
-    """Return an empty chunk result set for the scaffold."""
-    _ = (query, directory, fetch_contents, config)
+    """Validate inputs and return an empty chunk result set until search is implemented."""
+    _ = (directory, fetch_contents)
+    parse_query_request(query)
+    parse_index_config(config)
     return []
 
 
-def files(query: dict[str, Any], directory: str, config: dict[str, Any] | None = None) -> list[FileFinding]:
-    """Return an empty file result set for the scaffold."""
-    _ = (query, directory, config)
+def files(
+    query: QueryRequest | Mapping[str, Any],
+    directory: str,
+    config: IndexConfig | Mapping[str, Any] | None = None,
+) -> list[FileFinding]:
+    """Validate inputs and return an empty file result set until search is implemented."""
+    _ = directory
+    parse_query_request(query)
+    parse_index_config(config)
     return []
