@@ -1,0 +1,26 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: Pre-release
+        type: boolean
+        default: true
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_PERSONAL_TOKEN }}
+      - uses: jdx/mise-action@v3
+      - name: Create tag and push to repo
+        run: |
+          git config --global user.email "noreply@github.com"
+          git config --global user.name "Github Workflow"
+          npx -y monotag@latest tag-push ${{ inputs.prerelease == true && '--pre-release' || '' }}
