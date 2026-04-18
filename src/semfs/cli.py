@@ -8,8 +8,17 @@ import typer
 import semfs
 from semfs.benchmark import write_placeholder_benchmark
 from semfs.config import load_config
+from semfs.errors import SemfsError
+from semfs.models import IndexConfig
 
 app = typer.Typer(help="Semantic file queries for local folders.")
+
+
+def _require_loaded_config(config_path: Path | None) -> IndexConfig:
+    loaded_config = load_config(config_path)
+    if loaded_config is None:
+        raise typer.Exit(code=1)
+    return loaded_config
 
 
 def version_callback(value: bool | None) -> None:
@@ -37,12 +46,16 @@ def index(
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
     """Create or refresh the scaffolded index state."""
-    loaded_config = load_config(config)
-    state = semfs.index(str(directory), loaded_config)
-    typer.echo(f"Starting index '{state.index_name}' for {directory}")
-    if verbose:
-        typer.echo(f"Using scaffold output path: {state.database_path}")
-    typer.echo(f"Indexed {state.indexed_files} files and {state.indexed_chunks} chunks")
+    try:
+        loaded_config = _require_loaded_config(config)
+        typer.echo(f"Starting index '{loaded_config.name}' for {directory}")
+        state = semfs.index(str(directory), loaded_config)
+        if verbose:
+            typer.echo(f"Using output path: {state.database_path}")
+        typer.echo(f"Indexed {state.indexed_files} files and {state.indexed_chunks} chunks")
+    except SemfsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
@@ -55,13 +68,21 @@ def chunks(
     config: Annotated[Path | None, typer.Option("--config", help="Path to a JSON config file.")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
-    """Return scaffolded chunk results."""
-    loaded_config = load_config(config)
-    results = semfs.chunks(
-        {"text": query, "max_results": top, "max_distance": distance}, str(directory), contents, loaded_config
-    )
-    if verbose:
-        typer.echo(f"Returned {len(results)} scaffold chunk results for {directory}")
+    """Return chunk query results."""
+    try:
+        loaded_config = _require_loaded_config(config)
+        results = semfs.chunks(
+            {"text": query, "max_results": top, "max_distance": distance}, str(directory), contents, loaded_config
+        )
+        for finding in results:
+            typer.echo(f"{finding.file}[{finding.from_line}:{finding.to_line}]")
+            if contents and finding.contents is not None:
+                typer.echo(finding.contents)
+        if verbose:
+            typer.echo(f"Returned {len(results)} chunk results for {directory}")
+    except SemfsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command()
@@ -74,10 +95,16 @@ def files(
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
     """Return scaffolded file results."""
-    loaded_config = load_config(config)
-    results = semfs.files({"text": query, "max_results": top, "max_distance": distance}, str(directory), loaded_config)
-    if verbose:
-        typer.echo(f"Returned {len(results)} scaffold file results for {directory}")
+    try:
+        loaded_config = _require_loaded_config(config)
+        results = semfs.files(
+            {"text": query, "max_results": top, "max_distance": distance}, str(directory), loaded_config
+        )
+        if verbose:
+            typer.echo(f"Returned {len(results)} scaffold file results for {directory}")
+    except SemfsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 @app.command("benchmark-scaffold")

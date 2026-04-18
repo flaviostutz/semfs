@@ -6,10 +6,10 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
-import sqlite_vec
+import sqlite_vec  # pyright: ignore[reportMissingTypeStubs]
 
 from semfs.errors import IndexStateError
-from semfs.models import FileSnapshot, IndexConfig
+from semfs.models import ChunkRecord, FileSnapshot, IndexConfig
 
 SCHEMA_VERSION = "1"
 REQUIRED_TABLES = {"index_meta", "file_snapshots", "chunk_index"}
@@ -81,6 +81,15 @@ def ensure_schema(connection: sqlite3.Connection, dimensions: int) -> None:
     connection.commit()
 
 
+def reset_schema(connection: sqlite3.Connection, dimensions: int) -> None:
+    """Drop and recreate the schema for a full rebuild."""
+    connection.execute("DROP TABLE IF EXISTS chunk_index")
+    connection.execute("DROP TABLE IF EXISTS file_snapshots")
+    connection.execute("DROP TABLE IF EXISTS index_meta")
+    connection.commit()
+    ensure_schema(connection, dimensions)
+
+
 def serialize_embedding(vector: list[float]) -> bytes:
     """Serialize an embedding for sqlite-vec storage."""
     return sqlite_vec.serialize_float32(vector)
@@ -107,6 +116,11 @@ def write_index_metadata(connection: sqlite3.Connection, config: IndexConfig, em
     }
     connection.executemany("INSERT OR REPLACE INTO index_meta(key, value) VALUES(?, ?)", metadata.items())
     connection.commit()
+
+
+def metadata_value(metadata: dict[str, str], key: str, default: str = "") -> str:
+    """Return one metadata value with a stable default."""
+    return metadata.get(key, default)
 
 
 def read_index_metadata(connection: sqlite3.Connection) -> dict[str, str]:
@@ -155,6 +169,21 @@ def build_file_snapshot(root: Path, file_path: Path, chunk_count: int) -> FileSn
     )
 
 
+def build_file_snapshot_from_contents(root: Path, file_path: Path, contents: str, chunk_count: int) -> FileSnapshot:
+    """Build a stored file snapshot using already-loaded UTF-8 contents."""
+    stat = file_path.stat()
+    timestamp = datetime.fromtimestamp(stat.st_mtime_ns / 1_000_000_000, UTC)
+    now = datetime.now(UTC)
+    return FileSnapshot(
+        file_path=str(file_path.relative_to(root)),
+        size_bytes=stat.st_size,
+        modified_time=timestamp,
+        content_digest=digest_contents(contents),
+        chunk_count=chunk_count,
+        last_indexed_at=now,
+    )
+
+
 def write_file_snapshots(connection: sqlite3.Connection, snapshots: list[FileSnapshot]) -> None:
     """Persist file snapshots used for freshness and digest checks."""
     connection.executemany(
@@ -181,6 +210,114 @@ def write_file_snapshots(connection: sqlite3.Connection, snapshots: list[FileSna
         ],
     )
     connection.commit()
+
+
+def replace_index_data(
+    connection: sqlite3.Connection, snapshots: list[FileSnapshot], chunk_records: list[ChunkRecord]
+) -> None:
+    """Replace stored snapshots and chunks in one transaction."""
+    connection.execute("BEGIN")
+    try:
+        connection.execute("DELETE FROM file_snapshots")
+        connection.execute("DELETE FROM chunk_index")
+        if snapshots:
+            connection.executemany(
+                """
+                INSERT INTO file_snapshots(
+                    file_path,
+                    size_bytes,
+                    modified_time,
+                    content_digest,
+                    chunk_count,
+                    last_indexed_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        snapshot.file_path,
+                        snapshot.size_bytes,
+                        snapshot.modified_time.isoformat(),
+                        snapshot.content_digest,
+                        snapshot.chunk_count,
+                        snapshot.last_indexed_at.isoformat(),
+                    )
+                    for snapshot in snapshots
+                ],
+            )
+        if chunk_records:
+            connection.executemany(
+                """
+                INSERT INTO chunk_index(
+                    chunk_id,
+                    embedding,
+                    file_path,
+                    start_line,
+                    end_line
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        int(record.chunk_id),
+                        serialize_embedding(record.embedding),
+                        record.file_path,
+                        record.start_line,
+                        record.end_line,
+                    )
+                    for record in chunk_records
+                ],
+            )
+    except sqlite3.Error:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
+
+
+def index_counts(connection: sqlite3.Connection) -> tuple[int, int]:
+    """Return the stored file and chunk counts for one index."""
+    file_count = int(connection.execute("SELECT COUNT(*) FROM file_snapshots").fetchone()[0])
+    chunk_count = int(connection.execute("SELECT COUNT(*) FROM chunk_index").fetchone()[0])
+    return file_count, chunk_count
+
+
+def read_file_snapshot(connection: sqlite3.Connection, file_path: str) -> FileSnapshot | None:
+    """Return one stored file snapshot when present."""
+    row = connection.execute(
+        """
+        SELECT file_path, size_bytes, modified_time, content_digest, chunk_count, last_indexed_at
+        FROM file_snapshots
+        WHERE file_path = ?
+        """,
+        [file_path],
+    ).fetchone()
+    if row is None:
+        return None
+
+    return FileSnapshot(
+        file_path=str(row["file_path"]),
+        size_bytes=int(row["size_bytes"]),
+        modified_time=datetime.fromisoformat(str(row["modified_time"])),
+        content_digest=str(row["content_digest"]),
+        chunk_count=int(row["chunk_count"]),
+        last_indexed_at=datetime.fromisoformat(str(row["last_indexed_at"])),
+    )
+
+
+def fetch_chunk_candidates(
+    connection: sqlite3.Connection, query_embedding: bytes, candidate_k: int
+) -> list[sqlite3.Row]:
+    """Return deterministic chunk candidates from sqlite-vec KNN search."""
+    rows = connection.execute(
+        """
+        SELECT chunk_id, file_path, start_line, end_line, distance
+        FROM chunk_index
+        WHERE embedding MATCH ?
+          AND k = ?
+        ORDER BY distance
+        """,
+        [query_embedding, candidate_k],
+    ).fetchall()
+    return sorted(rows, key=lambda row: (float(row["distance"]), str(row["file_path"]), int(row["start_line"])))
 
 
 def detect_snapshot_drift(connection: sqlite3.Connection, root: Path, files: list[Path]) -> bool:

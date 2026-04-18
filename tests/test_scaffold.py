@@ -25,7 +25,8 @@ def _config_payload() -> dict[str, object]:
     }
 
 
-def test_public_api_returns_scaffold_state(tmp_path: Path) -> None:
+def test_public_api_returns_scaffold_state(tmp_path: Path, fake_model: object) -> None:
+    _ = fake_model
     config = _config_payload()
     state = semfs.index(str(tmp_path), config)
 
@@ -36,7 +37,8 @@ def test_public_api_returns_scaffold_state(tmp_path: Path) -> None:
     assert semfs.files({"text": "what is x?"}, str(tmp_path), config) == []
 
 
-def test_cli_commands_run(tmp_path: Path) -> None:
+def test_cli_commands_run(tmp_path: Path, fake_model: object) -> None:
+    _ = fake_model
     runner = CliRunner()
     config_path = tmp_path / ".semfsrc"
     config_path.write_text(json.dumps(_config_payload()), encoding="utf-8")

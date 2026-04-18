@@ -17,14 +17,20 @@ def _config_payload() -> dict[str, object]:
     }
 
 
-def test_index_returns_initialized_state(tmp_path: Path) -> None:
+def test_index_returns_initialized_state(tmp_path: Path, fake_model: object) -> None:
+    _ = fake_model
+    file_path = tmp_path / "doc.md"
+    file_path.write_text("# Title\nalpha body\n", encoding="utf-8")
+
     state = index(str(tmp_path), _config_payload())
 
     assert state.status is IndexStatus.READY
     assert state.index_name == "index0"
     assert state.database_path.endswith(".semfs/index0/index.db")
     assert state.schema_version == "1"
-    assert state.embedding_dimensions == 0
+    assert state.embedding_dimensions == 3
+    assert state.indexed_files == 1
+    assert state.indexed_chunks >= 1
 
 
 def test_missing_directory_raises() -> None:

@@ -40,3 +40,25 @@ def test_merge_contiguous_findings_combines_adjacent_ranges() -> None:
     assert merged[0].from_line == 1
     assert merged[0].to_line == 5
     assert merged[0].score == 0.9
+
+
+def test_merge_contiguous_findings_keeps_gapped_ranges_separate() -> None:
+    findings = [
+        ChunkFinding.model_validate({"file": "docs/a.md", "from": 1, "to": 2, "score": 0.8}),
+        ChunkFinding.model_validate({"file": "docs/a.md", "from": 4, "to": 5, "score": 0.7}),
+    ]
+
+    merged = merge_contiguous_findings(findings)
+
+    assert len(merged) == 2
+    assert merged[0].to_line == 2
+    assert merged[1].from_line == 4
+
+
+def test_auto_chunking_without_structure_falls_back_to_fixed() -> None:
+    text = "alpha\nbeta\ngamma\ndelta\n"
+    config = ChunkingConfig(size=8, overlap=0, edges=ChunkingEdges.AUTO)
+
+    chunks = chunk_text(text, "README.md", config)
+
+    assert len(chunks) >= 2
