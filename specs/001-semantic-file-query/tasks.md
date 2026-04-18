@@ -111,9 +111,9 @@
 
 **Purpose**: Align docs, developer workflow, and verification with the delivered feature.
 
-- [ ] T035 [P] Update public usage documentation in `README.md` and `specs/001-semantic-file-query/quickstart.md`
-- [ ] T036 Verify `.github/agents/copilot-instructions.md` remains consistent with the implemented stack after code scaffolding lands
-- [ ] T037 Run `make build`, `make lint-fix`, and `make test` and resolve any implementation regressions
+- [x] T035 [P] Update public usage documentation in `README.md` and `specs/001-semantic-file-query/quickstart.md`
+- [x] T036 Verify `.github/agents/copilot-instructions.md` remains consistent with the implemented stack after code scaffolding lands
+- [x] T037 Run `make build`, `make lint-fix`, and `make test` and resolve any implementation regressions
 
 ---
 

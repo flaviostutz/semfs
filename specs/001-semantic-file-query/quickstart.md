@@ -2,7 +2,7 @@
 
 ## Goal
 
-Verify the planned feature end-to-end once implementation is complete: configure the project, create a named index, query chunks and files, and run both benchmark scenarios.
+Verify semfs end-to-end: configure the project, create a named index, query chunks and files, and run both benchmark scenarios.
 
 ## 1. Install project dependencies
 
@@ -47,6 +47,14 @@ Expected behavior:
 - The CLI prints a success message with indexed file and chunk counts.
 - If the filter matches files but none of them yield chunks, indexing still succeeds and later queries return an empty result set.
 
+Lifecycle modes:
+
+- `refresh` rebuilds before every index or query operation.
+- `auto` rebuilds when the index is missing or source files changed.
+- `stale` reuses an existing index even when source files changed and only builds when no index exists yet.
+- `inmemory` uses an in-memory SQLite index and leaves no reusable on-disk state behind.
+- `transient` uses a temporary on-disk SQLite index and deletes it after the operation completes.
+
 ## 4. Query chunk results
 
 ```sh
@@ -78,7 +86,7 @@ config = {
     "name": "index0",
     "filter": "**/*.md",
     "mode": "auto",
-  "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
+    "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
     "model": "sentence-transformers/all-MiniLM-L6-v2",
 }
 
@@ -90,14 +98,19 @@ files = semfs.files({"text": "what is x?", "max_results": 5}, "docs", config)
 ## 7. Run benchmark scenarios
 
 ```sh
-make test
+uv run python examples/benchmark-corpora/run.py
 ```
 
 Expected behavior:
 
-- Unit and integration tests pass.
 - The small and large deterministic corpora are generated.
 - Index and query timings are recorded for both benchmark datasets.
 - Benchmark artifacts are written as JSON records under the repository-level `benchmarks/` directory.
 - Each planned benchmark run writes its own artifact and preserves prior benchmark artifacts unless they are explicitly removed.
 - Benchmark and indexing runs are expected to complete on one local machine once the configured model is available locally, without loading the entire corpus into memory at once.
+
+To run the same flows as part of project verification:
+
+```sh
+make test
+```

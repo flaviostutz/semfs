@@ -3,33 +3,40 @@
 Auto-generated from all feature plans. Last updated: 2026-04-18
 
 ## Active Technologies
-- Python 3.11+ (current workspace: Python 3.14.3) + sentence-transformers, Typer, Pydantic, sqlite3, numpy, pytes (001-semantic-file-query)
-- Local filesystem plus SQLite index databases under `{dir}/.semfs/<index-name>/index.db` (001-semantic-file-query)
-- Python 3.11+ (current workspace: Python 3.14.3) + sentence-transformers, Typer, Pydantic, sqlite3, sqlite-vec, numpy, pytes (001-semantic-file-query)
-- Local filesystem plus SQLite index databases under `{dir}/.semfs/<index-name>/index.db`, with sqlite-vec tables for persisted embeddings and nearest-neighbor queries (001-semantic-file-query)
-
-- (001-semantic-file-query)
+- Python 3.11+ (current workspace: Python 3.14.3)
+- sentence-transformers, Typer, Pydantic, sqlite3, sqlite-vec, numpy, pytest
+- Local filesystem plus SQLite index databases under `{dir}/.semfs/<index-name>/index.db`
+- sqlite-vec-backed nearest-neighbor queries in the persisted `chunk_index` table
 
 ## Project Structure
 
 ```text
 src/
 tests/
+tests_integration/
+examples/
 ```
 
 ## Commands
 
-# Add commands for 
+- `make install`
+- `make lint`
+- `make lint-fix`
+- `make test`
+- `make build`
+- `uv run semfs --help`
 
 ## Code Style
 
-: Follow standard conventions
+- Keep CLI argument parsing and config discovery in `src/semfs/cli.py`.
+- Keep storage setup and sqlite-vec schema ownership in `src/semfs/storage.py`.
+- Keep direct KNN retrieval and result post-processing in `src/semfs/search.py`.
+- Keep benchmark corpus generation deterministic and local-only.
 
 ## Recent Changes
-- 001-semantic-file-query: Added Python 3.11+ (current workspace: Python 3.14.3) + sentence-transformers, Typer, Pydantic, sqlite3, sqlite-vec, numpy, pytes
-- 001-semantic-file-query: Added Python 3.11+ (current workspace: Python 3.14.3) + sentence-transformers, Typer, Pydantic, sqlite3, numpy, pytes
-
-- 001-semantic-file-query: Added
+- 001-semantic-file-query: Implemented chunk and file semantic search through library and CLI flows.
+- 001-semantic-file-query: Implemented named index lifecycle modes `refresh`, `auto`, `stale`, `inmemory`, and `transient`.
+- 001-semantic-file-query: Implemented deterministic benchmark corpora and JSON timing artifacts under `benchmarks/`.
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->
