@@ -91,17 +91,17 @@
 
 ### Tests for User Story 3
 
-- [ ] T027 [P] [US3] Add index-mode and config-validation tests in `tests/test_config.py` and `tests/test_indexer.py`
-- [ ] T028 [P] [US3] Add small corpus integration coverage in `tests_integration/test_small_corpus.py`
-- [ ] T029 [P] [US3] Add large corpus integration and benchmark coverage in `tests_integration/test_large_corpus.py`, including verification that benchmark artifacts are persisted under `benchmarks/`
+- [x] T027 [P] [US3] Add index-mode and config-validation tests in `tests/test_config.py` and `tests/test_indexer.py`
+- [x] T028 [P] [US3] Add small corpus integration coverage in `tests_integration/test_small_corpus.py`
+- [x] T029 [P] [US3] Add large corpus integration and benchmark coverage in `tests_integration/test_large_corpus.py`, including verification that benchmark artifacts are persisted under `benchmarks/`
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] Implement named-index path resolution and mode handling in `src/semfs/indexer.py` for `refresh`, `auto`, `stale`, `inmemory`, and `transient`
-- [ ] T031 [US3] Implement deterministic corpus generation in `src/semfs/synthetic_data.py`
-- [ ] T032 [US3] Implement benchmark execution and timing capture in `src/semfs/benchmark.py`, persisting artifacts under the repository-level `benchmarks/` directory
-- [ ] T033 [US3] Implement `semfs index DIR` in `src/semfs/cli.py` with start/completion messaging and config discovery via `.semfsrc` and `--config`
-- [ ] T034 [US3] Add runnable example flows in `examples/basic-usage/main.py` and `examples/benchmark-corpora/run.py`
+- [x] T030 [US3] Implement named-index path resolution and mode handling in `src/semfs/indexer.py` for `refresh`, `auto`, `stale`, `inmemory`, and `transient`
+- [x] T031 [US3] Implement deterministic corpus generation in `src/semfs/synthetic_data.py`
+- [x] T032 [US3] Implement benchmark execution and timing capture in `src/semfs/benchmark.py`, persisting artifacts under the repository-level `benchmarks/` directory
+- [x] T033 [US3] Implement `semfs index DIR` in `src/semfs/cli.py` with start/completion messaging and config discovery via `.semfsrc` and `--config`
+- [x] T034 [US3] Add runnable example flows in `examples/basic-usage/main.py` and `examples/benchmark-corpora/run.py`
 
 **Checkpoint**: Named index lifecycle behavior and deterministic benchmark scenarios are fully covered.
 

@@ -167,3 +167,18 @@ class FileFinding(BaseModel):
 
     file: str
     best_score: float
+
+
+class BenchmarkRun(BaseModel):
+    """Recorded benchmark execution summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_name: str = Field(min_length=1)
+    folder_count: int = Field(ge=0)
+    file_count: int = Field(ge=0)
+    max_depth: int = Field(ge=0)
+    index_seconds: float = Field(ge=0)
+    query_seconds: float = Field(ge=0)
+    artifact_path: str = Field(min_length=1)
+    recorded_at: datetime

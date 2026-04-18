@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+import semfs
 from semfs.errors import FileProcessingError
 from semfs.indexer import embedding_dimensions, index, load_embedding_model
 from semfs.models import IndexStatus
@@ -59,3 +60,68 @@ def test_embedding_model_loader_is_cached(monkeypatch: pytest.MonkeyPatch) -> No
     assert first is second
     assert calls == ["fake-model"]
     assert embedding_dimensions("fake-model") == 384
+
+
+def test_stale_mode_reuses_existing_index_when_files_change(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    config = {**_config_payload(), "mode": "stale"}
+
+    initial = index(str(sample_docs), config)
+    (sample_docs / "alpha.md").write_text("# Intro\nbeta only\n", encoding="utf-8")
+
+    findings = semfs.files({"text": "alpha", "max_results": 5}, str(sample_docs), config)
+
+    assert initial.status is IndexStatus.READY
+    assert findings[0].file == "alpha.md"
+
+
+def test_auto_mode_rebuilds_when_files_change(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    config = {**_config_payload(), "mode": "auto"}
+
+    index(str(sample_docs), config)
+    (sample_docs / "alpha.md").write_text("# Intro\nbeta beta beta\n", encoding="utf-8")
+
+    findings = semfs.chunks({"text": "alpha", "max_results": 5}, str(sample_docs), fetch_contents=True, config=config)
+
+    alpha_finding = next(finding for finding in findings if finding.file == "alpha.md")
+    assert alpha_finding.contents is not None
+    assert "beta beta beta" in alpha_finding.contents
+
+
+def test_refresh_mode_rebuilds_before_query(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    stale_config = {**_config_payload(), "mode": "stale"}
+    refresh_config = {**_config_payload(), "mode": "refresh"}
+
+    index(str(sample_docs), stale_config)
+    (sample_docs / "alpha.md").write_text("# Intro\nbeta beta beta\n", encoding="utf-8")
+
+    findings = semfs.chunks(
+        {"text": "alpha", "max_results": 5}, str(sample_docs), fetch_contents=True, config=refresh_config
+    )
+
+    alpha_finding = next(finding for finding in findings if finding.file == "alpha.md")
+    assert alpha_finding.contents is not None
+    assert "beta beta beta" in alpha_finding.contents
+
+
+def test_inmemory_mode_keeps_index_off_disk(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+
+    state = index(str(sample_docs), {**_config_payload(), "mode": "inmemory"})
+
+    assert state.status is IndexStatus.EPHEMERAL
+    assert state.database_path == ":memory:"
+    assert not (sample_docs / ".semfs").exists()
+
+
+def test_transient_mode_discards_temp_index_after_operation(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+
+    state = index(str(sample_docs), {**_config_payload(), "mode": "transient"})
+
+    assert state.status is IndexStatus.EPHEMERAL
+    assert state.database_path != ":memory:"
+    assert not Path(state.database_path).exists()
+    assert not (sample_docs / ".semfs").exists()

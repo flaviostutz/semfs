@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from semfs.chunking import chunk_text
@@ -38,6 +39,7 @@ class PreparedIndex:
     config: IndexConfig
     connection: sqlite3.Connection
     state: IndexState
+    cleanup: Any | None = None
 
 
 @cache
@@ -204,20 +206,43 @@ def _prepare_ephemeral_index(root: Path, config: IndexConfig) -> PreparedIndex:
         raise
 
 
+def _prepare_transient_index(root: Path, config: IndexConfig) -> PreparedIndex:
+    temporary_directory = TemporaryDirectory(prefix="semfs-transient-")
+    database_path = Path(temporary_directory.name) / "index.db"
+    connection = connect_database(database_path)
+    try:
+        _rebuild_index(connection, root, config)
+        state = _build_state(root, config, str(database_path), IndexStatus.EPHEMERAL, connection)
+        return PreparedIndex(
+            root=root,
+            config=config,
+            connection=connection,
+            state=state,
+            cleanup=temporary_directory.cleanup,
+        )
+    except Exception:
+        connection.close()
+        temporary_directory.cleanup()
+        raise
+
+
 @contextmanager
 def open_prepared_index(directory: str, config: IndexConfig | dict[str, Any] | None) -> Iterator[PreparedIndex]:
     """Yield a ready-to-query index connection for one operation."""
     parsed_config = parse_index_config(config)
     root = _validate_directory(directory)
-    prepared = (
-        _prepare_ephemeral_index(root, parsed_config)
-        if parsed_config.mode in {IndexMode.INMEMORY, IndexMode.TRANSIENT}
-        else _prepare_persistent_index(root, parsed_config)
-    )
+    if parsed_config.mode is IndexMode.INMEMORY:
+        prepared = _prepare_ephemeral_index(root, parsed_config)
+    elif parsed_config.mode is IndexMode.TRANSIENT:
+        prepared = _prepare_transient_index(root, parsed_config)
+    else:
+        prepared = _prepare_persistent_index(root, parsed_config)
     try:
         yield prepared
     finally:
         prepared.connection.close()
+        if prepared.cleanup is not None:
+            prepared.cleanup()
 
 
 def index(directory: str, config: IndexConfig | dict[str, Any] | None = None) -> IndexState:

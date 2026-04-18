@@ -49,3 +49,14 @@ def test_resolve_config_path_uses_default_name(tmp_path: Path) -> None:
     resolved = resolve_config_path(cwd=tmp_path)
 
     assert resolved == tmp_path / ".semfsrc"
+
+
+def test_all_index_modes_are_accepted() -> None:
+    for mode in ["refresh", "auto", "stale", "inmemory", "transient"]:
+        config = parse_index_config({**_config_payload(), "mode": mode})
+        assert config.mode.value == mode
+
+
+def test_invalid_index_mode_is_rejected() -> None:
+    with pytest.raises(ConfigError):
+        parse_index_config({**_config_payload(), "mode": "unsupported"})

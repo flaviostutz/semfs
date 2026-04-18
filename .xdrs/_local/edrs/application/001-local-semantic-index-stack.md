@@ -23,6 +23,7 @@ semfs must ship as a Python library plus thin CLI. The CLI owns `.semfsrc` disco
 - Use JSON for `.semfsrc` so config discovery matches the shared CLI standard.
 - Treat `chunking.edges="auto"` as markdown-aware chunking for markdown files and fixed chunking otherwise; `chunking.edges="fixed"` always uses fixed chunking.
 - Persist file metadata and per-file content digests in SQLite tables, and persist/query chunk embeddings plus the retrieval fields `file_path`, `start_line`, and `end_line` through a single `sqlite-vec` table in the same index database for reusable modes without storing file contents in the index.
+- Use SQLite `:memory:` for `inmemory` mode and a temporary on-disk SQLite database deleted after use for `transient` mode so both remain non-persistent while exercising distinct runtime paths.
 - Treat `sqlite-vec` as the default local vector-search engine for the MVP; revisit only if packaging or benchmark evidence forces a different embedded approach.
 - Generate benchmark corpora deterministically during tests instead of committing large fixture trees, and persist benchmark timing artifacts under the repository-level `benchmarks/` directory.
 
