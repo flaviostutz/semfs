@@ -45,18 +45,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T013 [P] [US1] Add chunking and merge unit tests in `tests/test_chunking.py`
-- [ ] T014 [P] [US1] Add single-table sqlite-vec schema, digest verification, live-file excerpt reconstruction, and KNN tests in `tests/test_search.py`, including whole-query failure when requested contents cannot be verified
-- [ ] T015 [P] [US1] Add passage-query CLI tests in `tests/test_cli.py`
+- [x] T013 [P] [US1] Add chunking and merge unit tests in `tests/test_chunking.py`
+- [x] T014 [P] [US1] Add single-table sqlite-vec schema, digest verification, live-file excerpt reconstruction, and KNN tests in `tests/test_search.py`, including whole-query failure when requested contents cannot be verified
+- [x] T015 [P] [US1] Add passage-query CLI tests in `tests/test_cli.py`
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Implement directory scanning, file reads, and chunk production with stable line ranges in `src/semfs/indexer.py`
-- [ ] T017 [US1] Implement rebuild flows in `src/semfs/indexer.py` and `src/semfs/storage.py` that write `file_snapshots` metadata rows with `content_digest` and `chunk_index` rows in one transaction
-- [ ] T018 [US1] Implement query embedding and sqlite-vec candidate retrieval in `src/semfs/search.py` using `SELECT chunk_id, file_path, start_line, end_line, distance FROM chunk_index WHERE embedding MATCH :query_embedding AND k = :candidate_k ORDER BY distance, file_path, start_line`
-- [ ] T019 [US1] Implement passage result join, optional `max_distance` filtering, contiguous merge, live-file digest verification, live-file excerpt reconstruction on demand, and final trimming in `src/semfs/search.py`
-- [ ] T020 [US1] Expose `semfs.index()` and `semfs.chunks()` in `src/semfs/__init__.py`
-- [ ] T021 [US1] Implement `semfs chunks DIR QUERY` in `src/semfs/cli.py` with `--top`, `--distance`, `--contents`, and actionable failure output
+- [x] T016 [US1] Implement directory scanning, file reads, and chunk production with stable line ranges in `src/semfs/indexer.py`
+- [x] T017 [US1] Implement rebuild flows in `src/semfs/indexer.py` and `src/semfs/storage.py` that write `file_snapshots` metadata rows with `content_digest` and `chunk_index` rows in one transaction
+- [x] T018 [US1] Implement query embedding and sqlite-vec candidate retrieval in `src/semfs/search.py` using `SELECT chunk_id, file_path, start_line, end_line, distance FROM chunk_index WHERE embedding MATCH :query_embedding AND k = :candidate_k ORDER BY distance, file_path, start_line`
+- [x] T019 [US1] Implement passage result join, optional `max_distance` filtering, contiguous merge, live-file digest verification, live-file excerpt reconstruction on demand, and final trimming in `src/semfs/search.py`
+- [x] T020 [US1] Expose `semfs.index()` and `semfs.chunks()` in `src/semfs/__init__.py`
+- [x] T021 [US1] Implement `semfs chunks DIR QUERY` in `src/semfs/cli.py` with `--top`, `--distance`, `--contents`, and actionable failure output
 
 **Checkpoint**: Passage indexing and chunk search work end-to-end through both the library and CLI.
 
