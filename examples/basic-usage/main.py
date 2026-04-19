@@ -16,7 +16,6 @@ def main() -> None:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
     try:
         with TemporaryDirectory(prefix="semfs-basic-example-") as temp_dir:

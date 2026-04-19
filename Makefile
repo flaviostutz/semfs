@@ -45,6 +45,10 @@ run:
 	@echo ">>> ./lib: run"
 	$(MAKE) -C lib run
 
+run-benchmark:
+	@echo ">>> ./examples: run-benchmark"
+	$(MAKE) -C examples run-benchmark
+
 dev: run
 
 update-lockfile:

@@ -17,7 +17,6 @@ DEFAULT_INDEX_MODE = "auto"
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 250
 DEFAULT_CHUNK_EDGES = "auto"
-DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def resolve_config_path(config_path: Path | None = None, cwd: Path | None = None) -> Path:
@@ -39,7 +38,6 @@ def default_index_config() -> IndexConfig:
                 "overlap": DEFAULT_CHUNK_OVERLAP,
                 "edges": DEFAULT_CHUNK_EDGES,
             },
-            "model": DEFAULT_MODEL_NAME,
         }
     )
 

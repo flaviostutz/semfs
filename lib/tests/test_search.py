@@ -23,7 +23,6 @@ def _config_payload() -> dict[str, object]:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -46,7 +45,7 @@ def test_index_metadata_and_snapshot_drift(tmp_path: Path) -> None:
     store = open_index_store(tmp_path / "store")
     config = parse_index_config(_config_payload())
 
-    write_index_metadata(store, config, embedding_dimensions=8)
+    write_index_metadata(store, config)
 
     snapshot = build_file_snapshot(root, file_path, chunk_count=1)
     write_file_snapshots(store, [snapshot])

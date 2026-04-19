@@ -6,7 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 import semfs
-from semfs.benchmark import write_placeholder_benchmark
+from semfs.benchmark import run_benchmark, write_placeholder_benchmark
 from semfs.chunking import chunking_description
 from semfs.cli import app
 from semfs.config import load_config
@@ -21,7 +21,6 @@ def _config_payload() -> dict[str, object]:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 80, "overlap": 20, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -73,6 +72,21 @@ def test_supporting_helpers_work(tmp_path: Path) -> None:
     assert planned_dataset_sizes() == {"small_files": 30, "large_files": 5000}
     assert artifact.exists()
     assert isinstance(SemfsError("boom"), SemfsError)
+
+
+def test_run_benchmark_uses_valid_index_modes(small_corpus: Path, fake_model: object, tmp_path: Path) -> None:
+    _ = fake_model
+
+    result = run_benchmark(
+        dataset_name="small",
+        dataset_root=small_corpus,
+        config=_config_payload(),
+        query_text="alpha",
+        output_dir=tmp_path / "benchmarks",
+    )
+
+    assert result.dataset_name == "small"
+    assert Path(result.artifact_path).exists()
 
 
 def test_missing_config_is_reported(tmp_path: Path) -> None:

@@ -12,9 +12,9 @@ The feature requires a local-first semantic search library and CLI, but the repo
 
 ## Decision Outcome
 
-**Use uv-managed Python with Typer, JSON config, sentence-transformers, and ChromaDB local indexes**
+**Use uv-managed Python with Typer, JSON config, and ChromaDB local indexes with Chroma's default embedding flow**
 
-semfs must ship as a Python library plus thin CLI. The CLI owns `.semfsrc` discovery and `--config` overrides, embeddings are produced locally with `sentence-transformers`, and named indexes are stored in ChromaDB under `{dir}/.semfs/<index-name>` for persisted vector storage and nearest-neighbor search.
+semfs must ship as a Python library plus thin CLI. The CLI owns `.semfsrc` discovery and `--config` overrides, embeddings are produced through ChromaDB's default embedding function, and named indexes are stored in ChromaDB under `{dir}/.semfs/<index-name>` for persisted vector storage and nearest-neighbor search.
 
 ### Implementation Details
 
@@ -22,7 +22,7 @@ semfs must ship as a Python library plus thin CLI. The CLI owns `.semfsrc` disco
 - Keep command handling in `cli.py` and domain behavior in library modules.
 - Use JSON for `.semfsrc` so config discovery matches the shared CLI standard.
 - Treat `chunking.edges="auto"` as markdown-aware chunking for markdown files and fixed chunking otherwise; `chunking.edges="fixed"` always uses fixed chunking.
-- Persist file metadata and per-file content digests in ChromaDB metadata collections, and persist/query chunk embeddings with retrieval fields `file_path`, `start_line`, and `end_line` through a dedicated chunks collection for reusable modes without storing file contents in the index.
+- Persist file metadata and per-file content digests in ChromaDB metadata collections, and persist/query chunk documents with retrieval fields `file_path`, `start_line`, and `end_line` through a dedicated chunks collection so ChromaDB can apply its default embedding function automatically.
 - Use ChromaDB ephemeral client for `inmemory` mode and a temporary on-disk ChromaDB directory deleted after use for `transient` mode so both remain non-persistent while exercising distinct runtime paths.
 - Treat ChromaDB as the default local vector-search engine for the MVP because benchmark scalability issues made the SQLite plus sqlite-vec approach insufficient.
 - Generate benchmark corpora deterministically during tests instead of committing large fixture trees, and persist benchmark timing artifacts under the repository-level `benchmarks/` directory.

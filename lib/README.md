@@ -17,8 +17,7 @@ Default CLI config:
     "size": 500,
     "overlap": 250,
     "edges": "auto"
-  },
-  "model": "sentence-transformers/all-MiniLM-L6-v2"
+  }
 }
 ```
 
@@ -33,8 +32,7 @@ Optional `.semfsrc` override:
     "size": 500,
     "overlap": 250,
     "edges": "auto"
-  },
-  "model": "sentence-transformers/all-MiniLM-L6-v2"
+  }
 }
 ```
 
@@ -46,7 +44,7 @@ make setup
 ./.venv/bin/semfs chunks docs "what is x?" --top 5
 ```
 
-The configured embedding model must be available locally before offline indexing or querying.
+semfs delegates embedding generation to ChromaDB's default embedding function. No model selection is required in semfs config.
 
 ## Using semfs
 
@@ -101,7 +99,7 @@ semfs index docs --config .semfsrc
 
 When `.semfsrc` is absent, the CLI falls back to the default config shown above. When `--config` is provided, that file must exist and contain valid JSON.
 
-Successful `index` runs print a start message and a completion message with indexed file and chunk counts. If the configured model is not available locally, semfs fails with an actionable error instead of falling back to online behavior.
+Successful `index` runs print a start message and a completion message with indexed file and chunk counts.
 
 ## Library Examples
 
@@ -115,7 +113,6 @@ config = {
     "filter": "**/*.md",
     "mode": "auto",
     "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-    "model": "sentence-transformers/all-MiniLM-L6-v2",
 }
 
 state = semfs.index("docs", config)
@@ -132,7 +129,6 @@ config = {
     "filter": "**/*.md",
     "mode": "auto",
     "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-    "model": "sentence-transformers/all-MiniLM-L6-v2",
 }
 query = {"text": "what is x?", "max_results": 5}
 

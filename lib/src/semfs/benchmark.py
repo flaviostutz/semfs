@@ -8,7 +8,7 @@ from time import perf_counter
 from typing import Any
 
 import semfs
-from semfs.models import BenchmarkRun, IndexConfig
+from semfs.models import BenchmarkRun, IndexConfig, IndexMode
 from semfs.synthetic_data import create_dataset, dataset_spec
 
 
@@ -32,8 +32,8 @@ def run_benchmark(
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    index_config = parsed_config.model_copy(update={"mode": "refresh"})
-    query_config = parsed_config.model_copy(update={"mode": "stale"})
+    index_config = parsed_config.model_copy(update={"mode": IndexMode.REFRESH})
+    query_config = parsed_config.model_copy(update={"mode": IndexMode.STALE})
 
     index_started = perf_counter()
     semfs.index(str(dataset_root), index_config, verbose=verbose)

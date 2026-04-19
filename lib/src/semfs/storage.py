@@ -12,7 +12,8 @@ from semfs.errors import IndexStateError
 from semfs.models import ChunkRecord, FileSnapshot, IndexConfig
 from semfs.verbose import emit_verbose, format_seconds
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
+DEFAULT_EMBEDDING_BACKEND = "chromadb-default"
 _DUMMY_EMBEDDING: list[float] = [0.0]
 _CHROMA_BATCH_SIZE = 500
 
@@ -39,12 +40,28 @@ def default_index_path(directory: str, index_name: str = "index0") -> Path:
     return Path(directory) / ".semfs" / index_name
 
 
+def default_embedding_function() -> Any:
+    """Return the default ChromaDB embedding function for text documents."""
+    try:
+        from chromadb.utils.embedding_functions import (
+            DefaultEmbeddingFunction,  # pyright: ignore[reportMissingTypeStubs]
+        )
+    except ImportError as exc:
+        message = (
+            "Failed action `open_index`: ChromaDB default embedding support is unavailable. "
+            "Next step: install chromadb embedding dependencies and retry."
+        )
+        raise IndexStateError(message) from exc
+    return DefaultEmbeddingFunction()
+
+
 def open_index_store(store_path: str | Path, *, in_memory: bool = False, verbose: bool = False) -> IndexStore:
     """Open a ChromaDB store at the given path or in memory."""
     import chromadb  # pyright: ignore[reportMissingTypeStubs]
 
+    target_path = ":memory:" if in_memory else str(Path(store_path))
     open_started = perf_counter()
-
+    emit_verbose(verbose, f"Opening Chroma store at {target_path}")
     if in_memory:
         try:
             client = chromadb.EphemeralClient()
@@ -71,6 +88,7 @@ def open_index_store(store_path: str | Path, *, in_memory: bool = False, verbose
     chunks = client.get_or_create_collection(
         name="chunks",
         metadata={"hnsw:space": "cosine"},
+        embedding_function=default_embedding_function(),
     )
     snapshots = client.get_or_create_collection(name="snapshots")
     index_meta = client.get_or_create_collection(name="index_meta")
@@ -92,6 +110,7 @@ def reset_store(store: IndexStore) -> None:
     store.chunks = store.client.create_collection(
         name="chunks",
         metadata={"hnsw:space": "cosine"},
+        embedding_function=default_embedding_function(),
     )
     store.snapshots = store.client.create_collection(name="snapshots")
     store.index_meta = store.client.create_collection(name="index_meta")
@@ -108,12 +127,12 @@ def chunking_fingerprint(config: IndexConfig) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def write_index_metadata(store: IndexStore, config: IndexConfig, embedding_dimensions: int) -> None:
+def write_index_metadata(store: IndexStore, config: IndexConfig) -> None:
     """Persist the index metadata required to validate a reusable index."""
     metadata_items = {
         "schema_version": SCHEMA_VERSION,
-        "model_name": config.model,
-        "embedding_dimensions": str(embedding_dimensions),
+        "model_name": DEFAULT_EMBEDDING_BACKEND,
+        "embedding_dimensions": "0",
         "chunking_fingerprint": chunking_fingerprint(config),
     }
     store.index_meta.upsert(
@@ -143,7 +162,7 @@ def index_is_usable(store: IndexStore, config: IndexConfig) -> bool:
         return False
     return (
         metadata.get("schema_version") == SCHEMA_VERSION
-        and metadata.get("model_name") == config.model
+        and metadata.get("model_name") == DEFAULT_EMBEDDING_BACKEND
         and metadata.get("chunking_fingerprint") == chunking_fingerprint(config)
     )
 
@@ -191,6 +210,7 @@ def write_file_snapshots(store: IndexStore, snapshots: list[FileSnapshot], *, ve
         return
 
     write_started = perf_counter()
+    emit_verbose(verbose, f"Writing {len(snapshots)} file snapshots to Chroma")
     batch_count = 0
     for batch in _batched(snapshots):
         batch_count += 1
@@ -211,7 +231,7 @@ def write_file_snapshots(store: IndexStore, snapshots: list[FileSnapshot], *, ve
     emit_verbose(
         verbose,
         (
-            f"Upserted {len(snapshots)} file snapshots to Chroma in {batch_count} batches "
+            f"Wrote {len(snapshots)} file snapshots to Chroma in {batch_count} batches "
             f"in {format_seconds(perf_counter() - write_started)}"
         ),
     )
@@ -225,51 +245,62 @@ def replace_index_data(
     verbose: bool = False,
 ) -> None:
     """Replace stored snapshots and chunks atomically."""
-    delete_started = perf_counter()
     existing_chunks = store.chunks.get(include=[])
     deleted_chunk_batches = 0
+    existing_snapshots = store.snapshots.get(include=[])
+    deleted_snapshot_batches = 0
+    delete_started = perf_counter()
+    emit_verbose(verbose, "Deleting existing index rows")
     for batch in _batched(existing_chunks["ids"]):
         deleted_chunk_batches += 1
         store.chunks.delete(ids=batch)
 
-    existing_snapshots = store.snapshots.get(include=[])
-    deleted_snapshot_batches = 0
     for batch in _batched(existing_snapshots["ids"]):
         deleted_snapshot_batches += 1
         store.snapshots.delete(ids=batch)
     emit_verbose(
         verbose,
         (
-            f"Deleted existing index rows in {format_seconds(perf_counter() - delete_started)} "
-            f"({deleted_chunk_batches} chunk batches, {deleted_snapshot_batches} snapshot batches)"
+            "Deleted existing index rows "
+            f"({deleted_chunk_batches} chunk batches, {deleted_snapshot_batches} snapshot batches) in "
+            f"{format_seconds(perf_counter() - delete_started)}"
         ),
     )
 
     if snapshots:
         write_file_snapshots(store, snapshots, verbose=verbose)
 
-    chunk_write_started = perf_counter()
     chunk_batch_count = 0
-    for batch in _batched(chunk_records):
-        chunk_batch_count += 1
-        store.chunks.add(
-            ids=[record.chunk_id for record in batch],
-            embeddings=[record.embedding for record in batch],
-            metadatas=[
-                {
-                    "file_path": record.file_path,
-                    "start_line": record.start_line,
-                    "end_line": record.end_line,
-                }
-                for record in batch
-            ],
-        )
     if chunk_records:
+        chunk_write_started = perf_counter()
+        emit_verbose(verbose, f"Writing {len(chunk_records)} chunk vectors to Chroma")
+        try:
+            for batch in _batched(chunk_records):
+                chunk_batch_count += 1
+                store.chunks.add(
+                    ids=[record.chunk_id for record in batch],
+                    documents=[record.document for record in batch],
+                    metadatas=[
+                        {
+                            "file_path": record.file_path,
+                            "start_line": record.start_line,
+                            "end_line": record.end_line,
+                        }
+                        for record in batch
+                    ],
+                )
+        except Exception as exc:
+            message = (
+                f"Failed action `index` for {store.store_path}: "
+                "ChromaDB default embedding failed while indexing chunks. "
+                "Next step: ensure the default Chroma embedding model can be downloaded or is cached locally, then retry."
+            )
+            raise IndexStateError(message) from exc
         emit_verbose(
             verbose,
             (
-                f"Inserted {len(chunk_records)} chunk vectors to Chroma in {chunk_batch_count} batches "
-                f"in {format_seconds(perf_counter() - chunk_write_started)}"
+                f"Wrote {len(chunk_records)} chunk vectors to Chroma in {chunk_batch_count} batches in "
+                f"{format_seconds(perf_counter() - chunk_write_started)}"
             ),
         )
 
@@ -299,7 +330,7 @@ def read_file_snapshot(store: IndexStore, file_path: str) -> FileSnapshot | None
 
 def fetch_chunk_candidates(
     store: IndexStore,
-    query_embedding: list[float],
+    query_text: str,
     candidate_k: int,
     *,
     verbose: bool = False,
@@ -311,12 +342,20 @@ def fetch_chunk_candidates(
 
     k = min(candidate_k, total_chunks)
     query_started = perf_counter()
-    results = store.chunks.query(
-        query_embeddings=[query_embedding],
-        n_results=k,
-        include=["distances", "metadatas"],
-    )
-
+    emit_verbose(verbose, f"Querying Chroma for up to {k} chunk candidates")
+    try:
+        results = store.chunks.query(
+            query_texts=[query_text],
+            n_results=k,
+            include=["distances", "metadatas"],
+        )
+    except Exception as exc:
+        message = (
+            f"Failed action `query` for {store.store_path}: "
+            "ChromaDB default embedding failed while processing the query. "
+            "Next step: ensure the default Chroma embedding model can be downloaded or is cached locally, then retry."
+        )
+        raise IndexStateError(message) from exc
     rows: list[dict[str, Any]] = [
         {
             "chunk_id": chunk_id,
@@ -336,7 +375,7 @@ def fetch_chunk_candidates(
     emit_verbose(
         verbose,
         (
-            f"Chroma query searched {total_chunks} chunks and returned {len(ranked)} rows in "
+            f"Queried Chroma across {total_chunks} chunks and received {len(ranked)} rows in "
             f"{format_seconds(perf_counter() - query_started)}"
         ),
     )
@@ -346,6 +385,8 @@ def fetch_chunk_candidates(
 def detect_snapshot_drift(store: IndexStore, root: Path, files: list[Path], *, verbose: bool = False) -> bool:
     """Return true when the current file set differs from stored snapshot metadata."""
     drift_started = perf_counter()
+    emit_verbose(verbose, f"Checking snapshot drift across {len(files)} files")
+    has_drift = False
     result = store.snapshots.get(include=["metadatas"])
     stored = {
         item_id: (int(meta["size_bytes"]), str(meta["modified_time"]))
@@ -362,9 +403,8 @@ def detect_snapshot_drift(store: IndexStore, root: Path, files: list[Path], *, v
     emit_verbose(
         verbose,
         (
-            f"Snapshot drift check across {len(files)} files completed in "
-            f"{format_seconds(perf_counter() - drift_started)}; "
-            f"drift={has_drift}"
+            f"Checked snapshot drift across {len(files)} files; drift={has_drift} in "
+            f"{format_seconds(perf_counter() - drift_started)}"
         ),
     )
     return has_drift

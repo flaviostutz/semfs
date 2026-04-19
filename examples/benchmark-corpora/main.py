@@ -11,7 +11,6 @@ def main() -> None:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 240, "overlap": 40, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
     output_dir = Path(__file__).resolve().parents[2] / "benchmarks"
     try:

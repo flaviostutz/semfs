@@ -60,7 +60,7 @@ class IndexConfig(BaseModel):
     filter: str = Field(default="**/*", min_length=1)
     mode: IndexMode
     chunking: ChunkingConfig
-    model: str = Field(min_length=1)
+    model: str | None = Field(default=None, min_length=1)
 
     @field_validator("name")
     @classmethod
@@ -131,7 +131,7 @@ class ChunkRecord(BaseModel):
     file_path: str
     start_line: int = Field(ge=1)
     end_line: int = Field(ge=1)
-    embedding: list[float]
+    document: str = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_line_range(self) -> "ChunkRecord":

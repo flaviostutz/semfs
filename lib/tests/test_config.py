@@ -14,7 +14,6 @@ def _config_payload() -> dict[str, object]:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -71,4 +70,10 @@ def test_default_index_config_matches_cli_defaults() -> None:
     assert config.chunking.size == 500
     assert config.chunking.overlap == 250
     assert config.chunking.edges is ChunkingEdges.AUTO
-    assert config.model == "sentence-transformers/all-MiniLM-L6-v2"
+    assert config.model is None
+
+
+def test_config_allows_legacy_model_field_without_using_it() -> None:
+    config = parse_index_config({**_config_payload(), "model": "legacy-model-name"})
+
+    assert config.model == "legacy-model-name"
