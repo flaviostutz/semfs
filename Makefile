@@ -1,47 +1,55 @@
 SHELL := /bin/bash
+ROOT_DIR := $(abspath .)
+export UV_PROJECT_ENVIRONMENT := $(ROOT_DIR)/.venv
+export UV_CACHE_DIR := $(ROOT_DIR)/.cache/uv
 
-PACKAGE_NAME ?= semfs
+.PHONY: setup all install build lint lint-fix test test-unit test-integration test-examples run dev update-lockfile clean bump
 
-.PHONY: all install build lint lint-fix test test-unit test-examples run dev update-lockfile clean bump
+setup: install
 
 all: build lint test
 
 install:
-	uv sync --frozen --all-extras --dev
+	$(MAKE) -C lib install
 
-build: install
-	uv build
+build:
+	$(MAKE) -C lib build
 
 lint:
-	uv run ruff format --check .
-	uv run ruff check .
-	uv run pyright
-	uv run pip-audit
+	$(MAKE) -C lib lint
 
 lint-fix:
-	uv run ruff format .
-	uv run ruff check . --fix
-	uv run pyright
-	uv run pip-audit
+	$(MAKE) -C lib lint-fix
 
-test: test-unit test-examples
+test: test-unit test-integration test-examples
 
 test-unit:
-	uv run pytest --cov=src/$(PACKAGE_NAME) --cov-branch --cov-report=term-missing --cov-fail-under=80
+	$(MAKE) -C lib test-unit
 
-test-examples:
-	@if [ -d examples ]; then $(MAKE) -C examples test PACKAGE_NAME=$(PACKAGE_NAME); else echo "No examples/ directory. Skipping"; fi
+test-integration:
+	$(MAKE) -C lib test-integration
+
+test-examples: build
+	@for dir in examples/*; do \
+		if [ -f "$$dir/pyproject.toml" ]; then \
+			echo ">>> Running $$dir"; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv sync --project "$$dir" --frozen || exit 1; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv pip install --python "$(UV_PROJECT_ENVIRONMENT)/bin/python" --force-reinstall lib/dist/*.whl || exit 1; \
+			HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv run --project "$$dir" python "$$dir/main.py" || exit 1; \
+		fi; \
+	done
 
 run:
-	uv run python -m $(PACKAGE_NAME) --help
+	$(MAKE) -C lib run
 
 dev: run
 
 update-lockfile:
-	uv lock --upgrade
+	$(MAKE) -C lib update-lockfile
 
 clean:
-	rm -rf .venv dist build .pytest_cache .ruff_cache .coverage htmlcov benchmarks
+	$(MAKE) -C lib clean
+	rm -rf .cache .venv
 	find . -type d -name __pycache__ -prune -exec rm -rf {} +
 
 bump:

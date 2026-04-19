@@ -55,7 +55,7 @@ def load_embedding_model(model_name: str) -> Any:
         raise ModelUnavailableError(message) from exc
 
     try:
-        return SentenceTransformer(model_name)
+        return SentenceTransformer(model_name, local_files_only=True)
     except (OSError, RuntimeError, ValueError) as exc:
         message = (
             f"Failed action `load_model` for model {model_name}: the embedding model could not be loaded. "

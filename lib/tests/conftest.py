@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from semfs.synthetic_data import create_dataset
+
 
 class FakeEmbeddingModel:
     """Deterministic embedding model used by tests."""
@@ -50,4 +52,18 @@ def sample_docs(tmp_path: Path) -> Path:
     )
     (root / "beta.md").write_text("# Beta\nbeta material\n", encoding="utf-8")
     (root / "binary.bin").write_bytes(b"\xff\xfe\x00\x00")
+    return root
+
+
+@pytest.fixture
+def small_corpus(tmp_path: Path) -> Path:
+    root = tmp_path / "small-corpus"
+    create_dataset(root, "small")
+    return root
+
+
+@pytest.fixture
+def large_corpus(tmp_path: Path) -> Path:
+    root = tmp_path / "large-corpus"
+    create_dataset(root, "large")
     return root

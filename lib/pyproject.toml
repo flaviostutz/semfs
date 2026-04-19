@@ -1,0 +1,80 @@
+[project]
+name = "semfs"
+version = "0.0.1"
+description = "Semantic file queries for local folders via a Python library and CLI."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=2.2.0",
+  "pydantic>=2.11.0",
+  "sentence-transformers>=5.0.0",
+  "sqlite-vec>=0.1.6",
+  "typer>=0.16.0",
+]
+
+[[project.authors]]
+name = "flaviostutz"
+
+[project.scripts]
+semfs = "semfs.cli:main"
+
+[dependency-groups]
+dev = [
+  "pip-audit>=2.9.0",
+  "pyright>=1.1.400",
+  "pytest>=8.4.0",
+  "pytest-cov>=6.1.0",
+  "ruff>=0.11.0",
+]
+
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+cache-dir = ".cache/ruff"
+output-format = "grouped"
+line-length = 120
+target-version = "py311"
+src = ["src", "tests", "tests_integration"]
+
+[tool.ruff.format]
+docstring-code-format = true
+line-ending = "lf"
+
+[tool.ruff.lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[tool.ruff.lint]
+task-tags = ["TODO"]
+select = ["ERA", "FAST", "ANN", "ASYNC", "S", "BLE", "FBT", "B", "A", "COM",
+  "C4", "DTZ", "T10", "DJ", "EM", "EXE", "FIX", "INT", "ISC", "ICN", "LOG", "G",
+  "INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "SLOT", "TID",
+  "TC", "ARG", "PTH", "FLY", "I", "C90", "NPY", "PD", "N", "PERF", "E", "W",
+  "D", "F", "PGH", "PL", "UP", "FURB", "RUF", "TRY"]
+ignore = ["ANN002", "ANN003", "ANN401", "D100", "D101", "D102", "D103", "D104",
+  "D105", "D106", "D107", "COM812", "D203", "D213", "D400", "D401", "D404", "D415", "FIX002"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.per-file-ignores]
+"src/semfs/cli.py" = ["FBT001", "FBT002", "PLR0913"]
+"src/semfs/chunking.py" = ["EM101", "TRY003"]
+"src/semfs/config.py" = ["EM102", "FBT001", "FBT002", "TRY003"]
+"src/semfs/indexer.py" = ["EM102", "PLC0415", "TRY003"]
+"src/semfs/models.py" = ["EM101", "TRY003"]
+"src/semfs/search.py" = ["FBT001", "FBT002"]
+"src/semfs/storage.py" = ["EM102", "FBT001", "FBT002", "FBT003", "TRY003"]
+"tests/**/*.py" = ["ANN001", "ANN201", "B017", "INP001", "PLR0913", "PLR2004", "PT011", "S101", "S108", "SLF001"]
+"tests_integration/**/*.py" = ["ANN001", "ANN201", "B017", "INP001", "PLR0913", "PLR2004", "PT011", "S101", "S108", "SLF001"]
+
+[tool.pyright]
+include = ["src", "tests", "tests_integration"]
+venvPath = ".."
+venv = ".venv"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "tests_integration"]
+addopts = "-q"

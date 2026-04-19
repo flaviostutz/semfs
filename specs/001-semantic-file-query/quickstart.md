@@ -98,7 +98,7 @@ files = semfs.files({"text": "what is x?", "max_results": 5}, "docs", config)
 ## 7. Run benchmark scenarios
 
 ```sh
-uv run python examples/benchmark-corpora/run.py
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv run --project examples/benchmark-corpora python examples/benchmark-corpora/main.py
 ```
 
 Expected behavior:

@@ -13,11 +13,12 @@ compatibility: Python 3.12+
 
 ## Overview
 
-Creates a complete Python project from scratch using `uv`, `pyproject.toml`, `ruff.toml`, Ruff, Pyright,
-Pytest, and Makefiles. The default layout uses `src/<package_name>/`, `tests/`, and `examples/`
-for libraries and shared utilities.
+Creates a complete Python project from scratch using `uv`, `pyproject.toml`, Ruff, Pyright,
+Pytest, and Makefiles. The default layout keeps the library self-contained under `lib/`, uses a
+shared root `.venv/`, redirects persistent caches into `.cache/`, and places runnable consumer
+projects under the sibling `examples/` folder.
 
-Related EDR: [agentme-edr-014](../../014-python-project-tooling.md)
+Related EDRs: [agentme-edr-014](../../014-python-project-tooling.md), [agentme-edr-016](../../../principles/016-cross-language-module-structure.md)
 
 ## Instructions
 
@@ -42,54 +43,130 @@ Create these files first.
 
 ```makefile
 SHELL := /bin/bash
-
-PACKAGE_NAME ?= your_package
-MISE := mise exec --
+ROOT_DIR := $(abspath .)
+export UV_PROJECT_ENVIRONMENT := $(ROOT_DIR)/.venv
+export UV_CACHE_DIR := $(ROOT_DIR)/.cache/uv
 
 all: build lint test
 
 install:
-	uv sync --frozen --all-extras --dev
+	$(MAKE) -C lib install
 
-build: install
-	uv build
+build:
+	$(MAKE) -C lib build
 
 lint:
-	uv run ruff format --check .
-	uv run ruff check .
-	uv run pyright
-	uv run pip-audit
+	$(MAKE) -C lib lint
 
 lint-fix:
-	uv run ruff format .
-	uv run ruff check . --fix
-	uv run pyright
-	uv run pip-audit
+	$(MAKE) -C lib lint-fix
 
 test: test-unit test-examples
 
 test-unit:
-	uv run pytest --cov=src/$(PACKAGE_NAME) --cov-branch --cov-report=term-missing --cov-fail-under=80
+	$(MAKE) -C lib test-unit
 
-test-examples:
-	@if [ -d examples ]; then $(MAKE) -C examples test PACKAGE_NAME=$(PACKAGE_NAME); else echo "No examples/ directory. Skipping"; fi
+test-examples: build
+	@for dir in examples/*; do \
+		if [ -f "$$dir/pyproject.toml" ]; then \
+			echo ">>> Running $$dir"; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv sync --project "$$dir" --frozen || exit 1; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv pip install --python "$(UV_PROJECT_ENVIRONMENT)/bin/python" lib/dist/*.whl || exit 1; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv run --project "$$dir" python main.py || exit 1; \
+		fi; \
+	done
 
-run:
-	uv run python -m $(PACKAGE_NAME)
+clean:
+	$(MAKE) -C lib clean
+	rm -rf .cache
+	rm -rf .venv
+```
+
+The root `Makefile` keeps the repository clean by delegating package work to `lib/` and treating each example directory as an independent consumer project.
+
+If the repository already uses Mise, wrap the delegated commands with `mise exec --` and pin both Python and uv in `.mise.toml`.
+
+**`./.gitignore`**
+
+```gitignore
+.venv/
+dist/
+.cache/
+```
+
+**`./README.md`**
+
+Keep this README focused on the repository or workspace. Put Getting Started near the top.
+
+````markdown
+# [package-name]
+
+[description]
+
+## Getting Started
+
+```sh
+make test
+```
+
+The published package lives in `lib/` and runnable consumer examples live in `examples/`.
+````
+
+### Phase 3: Create `lib/`
+
+`lib/` contains everything the library needs: source, tests, package metadata, lockfile, build
+artifacts, and library-specific Makefile targets.
+
+**`lib/Makefile`**
+
+```makefile
+SHELL := /bin/bash
+ROOT_DIR := $(abspath ..)
+export UV_PROJECT_ENVIRONMENT := $(ROOT_DIR)/.venv
+export UV_CACHE_DIR := $(ROOT_DIR)/.cache/uv
+export RUFF_CACHE_DIR := $(abspath .cache/ruff)
+export PYTHONPYCACHEPREFIX := $(abspath .cache/pycache)
+export COVERAGE_FILE := $(abspath .cache/coverage)
+
+PACKAGE_NAME ?= your_package
+
+all: build lint test-unit
+
+install:
+	uv sync --project . --frozen --all-extras --dev
+
+build: install
+	rm -rf dist
+	uv build --project . --out-dir dist
+
+lint: install
+	uv run --project . ruff format --check .
+	uv run --project . ruff check .
+	uv run --project . pyright
+	uv run --project . pip-audit
+
+lint-fix: install
+	uv run --project . ruff format .
+	uv run --project . ruff check . --fix
+	uv run --project . pyright
+	uv run --project . pip-audit
+
+test-unit: install
+	uv run --project . pytest -o cache_dir=.cache/pytest --cov=src/$(PACKAGE_NAME) --cov-branch --cov-report=term-missing --cov-report=html:.cache/htmlcov --cov-fail-under=80
+
+run: install
+	uv run --project . python -m $(PACKAGE_NAME)
 
 dev: run
 
 update-lockfile:
-	uv lock --upgrade
+	uv lock --project . --upgrade
 
 clean:
-	rm -rf .venv dist .pytest_cache .ruff_cache .coverage htmlcov
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+	rm -rf dist .cache
 ```
 
-If the repository already uses Mise, adapt the commands to `$(MISE) uv ...` and pin both Python and uv in `.mise.toml`.
-
-**`./pyproject.toml`**
+**`lib/pyproject.toml`**
 
 Replace placeholders such as `[package-name]`, `[description]`, `[author]`, and `[python-version]`.
 
@@ -121,9 +198,16 @@ dev = [
 requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
 [tool.pyright]
 include = ["src", "tests"]
-venvPath = "."
+venvPath = ".."
 venv = ".venv"
 typeCheckingMode = "standard"
 
@@ -132,69 +216,14 @@ testpaths = ["tests"]
 addopts = "-q"
 ```
 
-Use `pyproject.toml` for package metadata, Pyright, and Pytest configuration. Do not add
-`requirements.txt`, `setup.py`, `setup.cfg`, or `pyrightconfig.json` by default.
+Use `lib/pyproject.toml` as the single configuration file for the package. Do not add
+`requirements.txt`, `setup.py`, `setup.cfg`, `ruff.toml`, or `pyrightconfig.json` by default.
 
-**`./ruff.toml`**
+**`lib/README.md`**
 
-Use this Ruff baseline unless another applicable XDR overrides it.
+This README is the published package README referenced by `lib/pyproject.toml`.
 
-```toml
-cache-dir = ".ruff_cache"
-output-format = "grouped"
-
-line-length = 120
-src = [".", "apps/*/services/*/src", "src/"]
-
-[format]
-docstring-code-format = true
-line-ending = "lf"
-
-[lint.pycodestyle]
-ignore-overlong-task-comments = true # To allow longer TODO comments without raising E501
-
-[lint]
-task-tags = ["TODO"] # https://stackoverflow.com/a/79035357
-
-select = ["ERA", "FAST", "ANN", "ASYNC", "S", "BLE", "FBT", "B", "A", "COM",
-	"C4", "DTZ", "T10", "DJ", "EM", "EXE", "FIX", "INT", "ISC", "ICN", "LOG", "G",
-	"INP", "PIE", "T20", "PYI", "PT", "Q", "RSE", "RET", "SLF", "SIM", "SLOT", "TID",
-	"TC", "ARG", "PTH", "FLY", "I", "C90", "NPY", "PD", "N", "PERF", "E", "W",
-	"D", "F", "PGH", "PL", "UP", "FURB", "RUF", "TRY"]
-ignore = ["ANN002", "ANN003", "ANN401", "D100", "D101", "D102", "D103", "D104",
-	"D105", "D106", "D107", "COM812", "D203", "D213", "D400", "D401", "D404", "D415", "FIX002"]
-
-
-[lint.flake8-tidy-imports]
-# Ban relative imports beyond immediate module
-ban-relative-imports = "parents"
-
-[lint.per-file-ignores]
-"*/test_*.py" = ["S101", "ANN201", "ANN001", "PLR0913"]
-"*/tests/*.py" = ["S101", "ANN201", "ANN001", "PLR0913", "INP001", "B017", "PT011"]
-"scripts/*.py" = ["T20", "BLE001"]  # Allow prints in scripts
-"*/tests/*" = ["INP001", "SLF001", "PLR2004"]
-```
-
-**`./.gitignore`**
-
-```gitignore
-.venv/
-dist/
-build/
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-__pycache__/
-*.pyc
-```
-
-**`./README.md`**
-
-Put Getting Started near the top.
-
-```markdown
+````markdown
 # [package-name]
 
 [description]
@@ -211,13 +240,21 @@ from [package-name] import hello
 
 print(hello("world"))
 ```
-```
 
-### Phase 3: Create the package and tests
+## Development
+
+```sh
+make build
+make lint
+make test
+```
+````
+
+### Phase 4: Create the package and tests inside `lib/`
 
 Create this baseline structure.
 
-**`src/[package_name]/__init__.py`**
+**`lib/src/[package_name]/__init__.py`**
 
 ```python
 from .core import hello
@@ -225,14 +262,14 @@ from .core import hello
 __all__ = ["hello"]
 ```
 
-**`src/[package_name]/core.py`**
+**`lib/src/[package_name]/core.py`**
 
 ```python
 def hello(name: str) -> str:
     return f"Hello, {name}!"
 ```
 
-**`src/[package_name]/__main__.py`**
+**`lib/src/[package_name]/__main__.py`**
 
 Use this only for CLI-oriented projects.
 
@@ -248,7 +285,7 @@ if __name__ == "__main__":
     main()
 ```
 
-**`tests/test_core.py`**
+**`lib/tests/test_core.py`**
 
 ```python
 from [package_name].core import hello
@@ -258,25 +295,26 @@ def test_hello() -> None:
     assert hello("world") == "Hello, world!"
 ```
 
-If two or more test files need shared fixtures, create `tests/conftest.py` and move shared setup there.
+If two or more test files need shared fixtures, create `lib/tests/conftest.py` and move shared setup there.
 
-### Phase 4: Create examples for libraries and utilities
+If the module needs slower end-to-end coverage, place those tests in `lib/tests_integration/`. Put dedicated benchmark harnesses in `lib/tests_benchmark/`.
 
-If the project is a library or shared utility, add an `examples/` directory and execute it from the root `test` target.
+### Phase 5: Create examples for libraries and utilities
 
-**`examples/Makefile`**
+If the project is a library or shared utility, add an `examples/` directory with one subdirectory per runnable consumer example. Each example must be its own Python project.
 
-```makefile
-test:
-	$(MAKE) -C basic-usage run PACKAGE_NAME=$(PACKAGE_NAME)
+**`examples/basic-usage/pyproject.toml`**
+
+```toml
+[project]
+name = "basic-usage"
+version = "0.0.0"
+requires-python = ">=[python-version]"
+dependencies = []
 ```
 
-**`examples/basic-usage/Makefile`**
-
-```makefile
-run:
-	uv run python main.py
-```
+The root `test-examples` target installs the wheel built into `lib/dist/` before running each
+example. Do not point examples back to `../../lib` or `lib/src/`.
 
 **`examples/basic-usage/main.py`**
 
@@ -287,13 +325,13 @@ from [package_name] import hello
 print(hello("world"))
 ```
 
-Examples must import the built package as a consumer would. Avoid relative imports back into `src/`.
+Examples must import the package as a consumer would. Avoid relative imports back into `lib/src/`.
 
-### Phase 5: Verify
+### Phase 6: Verify
 
 After creating the files:
 
-1. Run `uv lock`.
+1. Run `make install`.
 2. Run `make lint-fix`.
 3. Run `make test`.
 4. Run `make build`.
@@ -302,19 +340,21 @@ After creating the files:
 ## Examples
 
 **Input:** "Create a Python library called `event_tools`"
-- Create `pyproject.toml`, `Makefile`, `src/event_tools/`, `tests/`, and `examples/`
+- Create `Makefile`, `README.md`, `lib/pyproject.toml`, `lib/Makefile`, `lib/src/event_tools/`, `lib/tests/`, and `examples/`
+- Add `lib/README.md`, `.cache/` handling, and install examples from the built wheel in `lib/dist/`
 - Configure `uv`, Ruff, Pyright, Pytest, `pytest-cov`, and `pip-audit`
 - Verify with `make lint-fix`, `make test`, and `make build`
 
 **Input:** "Scaffold a Python CLI package"
-- Add `src/<package_name>/__main__.py`
-- Add `[project.scripts]` in `pyproject.toml` when the command name must differ from the module name
+- Add `lib/src/<package_name>/__main__.py`
+- Add `[project.scripts]` in `lib/pyproject.toml` when the command name must differ from the module name
 - Keep the same Makefile and quality checks
 
 ## Edge Cases
 
 - If the repository already has a root `.mise.toml`, pin Python and uv there instead of assuming host-installed tools.
 - If the project is fewer than 100 lines and explicitly marked as a spike or experiment, examples and linting may be skipped only when another applicable XDR allows it.
+- If an example needs extra dependencies, keep them in that example's `pyproject.toml`; do not move them into `lib/pyproject.toml` unless the library truly needs them.
 - If the user asks for an app with framework-specific needs such as FastAPI or Django, keep this baseline and add the framework config on top instead of replacing it.
 
 ## References

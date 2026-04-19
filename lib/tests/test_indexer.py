@@ -46,8 +46,9 @@ def test_embedding_model_loader_is_cached(monkeypatch: pytest.MonkeyPatch) -> No
     calls: list[str] = []
 
     class FakeModel:
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, *, local_files_only: bool = False) -> None:
             calls.append(model_name)
+            assert local_files_only is True
 
         def get_sentence_embedding_dimension(self) -> int:
             return 384

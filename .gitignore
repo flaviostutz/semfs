@@ -1,13 +1,11 @@
 node_modules
 
 .filedist-tmp
+.cache/
 .venv/
 build/
 dist/
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+lib/dist/
 __pycache__/
 *.pyc
 benchmarks/

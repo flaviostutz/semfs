@@ -5,117 +5,47 @@ Semantic file queries for local folders via a Python library and CLI.
 ## Getting Started
 
 ```sh
-make install
-```
-
-```sh
-cat > .semfsrc <<'EOF'
-{
-	"name": "index0",
-	"filter": "**/*.md",
-	"mode": "auto",
-	"chunking": {
-		"size": 500,
-		"overlap": 250,
-		"edges": "auto"
-	},
-	"model": "sentence-transformers/all-MiniLM-L6-v2"
-}
-EOF
-```
-
-```sh
-uv run semfs index docs
-```
-
-Create `.semfsrc` as UTF-8 JSON before running indexed commands. The configured embedding model must be available locally before offline indexing, querying, or benchmark runs.
-
-`chunking.edges: "auto"` uses markdown-aware chunking for markdown files and fixed chunking for other UTF-8 text files. `"fixed"` always uses fixed chunking.
-
-Only UTF-8-readable text files matched by the filter are indexed. Binary files, unreadable files, and other unsupported non-text inputs are skipped.
-
-## CLI Examples
-
-```sh
-uv run semfs --version
-```
-
-```sh
-uv run semfs index docs
-```
-
-```sh
-uv run semfs chunks docs "what is x?" --top 5 --contents
-```
-
-```sh
-uv run semfs files docs "what is x?" --top 5
-```
-
-```sh
-uv run semfs index docs --config .semfsrc
-```
-
-```sh
-uv run python examples/benchmark-corpora/run.py
-```
-
-Successful `index` runs print a start message and a completion message with indexed file and chunk counts. Benchmark artifacts are written as JSON files under `benchmarks/` and preserved across planned runs unless they are removed explicitly.
-
-If the configured model is not available locally, semfs fails with an actionable error instead of silently falling back to online behavior.
-
-## Library Examples
-
-```python
-import semfs
-
-config = {
-    "name": "index0",
-    "filter": "**/*.md",
-    "mode": "auto",
-    "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-    "model": "sentence-transformers/all-MiniLM-L6-v2",
-}
-
-state = semfs.index("docs", config)
-print(state.status)
-```
-
-```python
-import semfs
-
-query = {"text": "what is x?", "max_results": 5}
-config = {
-    "name": "index0",
-    "filter": "**/*.md",
-    "mode": "auto",
-    "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-    "model": "sentence-transformers/all-MiniLM-L6-v2",
-}
-print(semfs.chunks(query, "docs", False, config))
-print(semfs.files(query, "docs", config))
-```
-
-## Benchmark Flow
-
-Run the benchmark example directly when you want fresh timing artifacts without running the full test suite:
-
-```sh
-uv run python examples/benchmark-corpora/run.py
-```
-
-Run the full suite, including the runnable examples, with:
-
-```sh
 make test
 ```
 
-Each planned benchmark run writes one JSON artifact per dataset under `benchmarks/`. Small and large corpora are generated deterministically during the benchmark run and integration tests.
+The published Python package lives in `lib/` and runnable consumer projects live in `examples/`.
 
-## Layout
+## Repository Layout
 
-- `src/semfs/` contains the library and CLI implementation.
-- `tests/` contains unit tests for config, indexing, search, and CLI behavior.
-- `tests_integration/` contains deterministic corpus and benchmark integration coverage.
-- `examples/` contains runnable usage scenarios executed by `make test`.
-- `specs/001-semantic-file-query/` contains the active feature artifacts.
+- `lib/` contains the package source, tests, package metadata, lockfile, and library-specific Makefile.
+- `examples/` contains independent consumer projects that exercise the package as an installed dependency.
+- `benchmarks/` stores benchmark timing artifacts written by benchmark flows.
+- `specs/` and `.xdrs/` capture the active feature and decision records for the repository.
+
+## Common Commands
+
+```sh
+make install
+make build
+make lint-fix
+make test
+make run
+```
+
+`make test` runs library unit tests, integration tests, and the consumer examples. Example verification installs the wheel built into `lib/dist/` before each run so examples exercise the package as a consumer would.
+
+## Package Usage
+
+User-facing CLI and library examples live in `lib/README.md`.
+
+From a source checkout, install the shared environment first and then run the package through `lib/`:
+
+```sh
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv run --project lib semfs --help
+```
+
+## Benchmark Example
+
+Run the benchmark consumer project against the built wheel when you want fresh artifacts under `benchmarks/`:
+
+```sh
+make build
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv sync --project examples/benchmark-corpora --frozen
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv pip install --python "$PWD/.venv/bin/python" --force-reinstall lib/dist/*.whl
+UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project examples/benchmark-corpora python examples/benchmark-corpora/main.py
+```
