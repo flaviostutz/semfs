@@ -1,6 +1,6 @@
 ---
 name: agentme-edr-014-python-project-tooling-and-structure
-description: Defines the standard Python project toolchain, layout, and Makefile workflow using uv, ruff, pyright, pytest, and pip-audit. Use when scaffolding or reviewing Python projects.
+description: Defines the standard Python project toolchain, layout, and Makefile workflow using Mise, uv, ruff, pyright, pytest, and pip-audit. Use when scaffolding or reviewing Python projects.
 ---
 
 # agentme-edr-014: Python project tooling and structure
@@ -13,7 +13,7 @@ What tooling and project structure should Python projects follow to ensure consi
 
 ## Decision Outcome
 
-**Use a uv-managed Python project with `pyproject.toml`, `ruff`, `pyright`, `pytest`, `pytest-cov`, `pip-audit`, and a layout that follows [agentme-edr-016](../principles/016-cross-language-module-structure.md): a module root under `lib/`, runnable consumer examples in sibling `examples/`, and standardized `dist/` and `.cache/` locations.**
+**Use a Mise-managed Python and uv toolchain with `pyproject.toml`, `ruff`, `pyright`, `pytest`, `pytest-cov`, `pip-audit`, and a layout that follows [agentme-edr-016](../principles/016-cross-language-module-structure.md): a module root under `lib/`, runnable consumer examples in sibling `examples/`, and standardized `dist/` and `.cache/` locations.**
 
 A single dependency manager, isolated package internals under `lib/`, and a standard Makefile contract keep Python projects predictable for contributors and CI while keeping the repository root clean.
 
@@ -23,6 +23,7 @@ A single dependency manager, isolated package internals under `lib/`, and a stan
 
 | Tool | Purpose |
 |------|---------|
+| **Mise** | Mandatory tool version management and command runner for Python, uv, and project CLIs |
 | **uv** | Dependency management, lockfile management, virtualenv sync, build, publish |
 | **pyproject.toml** | Single source of truth for package metadata and tool configuration |
 | **ruff** | Formatting, import sorting, linting, and common code-quality checks |
@@ -33,7 +34,7 @@ A single dependency manager, isolated package internals under `lib/`, and a stan
 
 All routine commands must run through the project `Makefile`, never by calling `uv`, `ruff`, `pytest`, or `pyright` directly in docs, CI, or daily development workflows.
 
-When the repository defines a root `.mise.toml`, Python and uv must be pinned there and commands should run through `mise exec --` or an activated Mise shell.
+The repository root MUST define a `.mise.toml` that pins Python and uv. Contributors and CI MUST bootstrap with `make setup` or `mise install`, then invoke routine work with `make <target>`. Each Makefile recipe MUST execute the underlying tool through `mise exec -- <tool> ...`, following [agentme-edr-017](../devops/017-tool-execution-and-scripting.md). Using routine project CLI commands directly outside the Makefile contract is not allowed.
 
 The root `.venv/` is the canonical environment location for both the library and all examples. Subdirectory commands must set `UV_PROJECT_ENVIRONMENT` to the workspace root `.venv/` instead of creating nested virtual environments.
 
@@ -43,7 +44,7 @@ Persistent caches must live under `.cache/`, preferably the module `lib/.cache/`
 
 ```text
 /
-├── .mise.toml              # optional but required when the repo uses Mise
+├── .mise.toml              # required; pins Python and uv
 ├── .gitignore
 ├── .cache/                 # optional shared uv cache at repo level
 ├── .venv/                  # shared uv environment for lib/ and examples/
@@ -101,7 +102,7 @@ Pytest coverage must fail below 80% line and branch coverage, following [agentme
 
 #### Makefile targets
 
-The commands below assume invocation through `mise exec -- make <target>` when the repository uses Mise, or plain `make <target>` inside an activated project environment.
+Contributors and CI MUST invoke the commands below as `make <target>`. The Makefile recipes themselves MUST call the underlying tools through `mise exec -- <tool> ...`.
 
 #### Root `Makefile`
 
@@ -109,6 +110,7 @@ The root `Makefile` is the only contract for CI and contributors. It delegates l
 
 | Target | Description |
 |--------|-------------|
+| `setup` | Run `mise install`, then `lib/install` to create or update the shared root `.venv/` |
 | `install` | Run `lib/install` to create or update the shared root `.venv/` |
 | `build` | Run `lib/build` |
 | `lint` | Run `lib/lint` |
@@ -123,17 +125,17 @@ The root `Makefile` is the only contract for CI and contributors. It delegates l
 
 | Target | Description |
 |--------|-------------|
-| `install` | `uv sync --project . --frozen --all-extras --dev` using the shared root `.venv/` |
-| `build` | `uv sync --project . --frozen --all-extras --dev && uv build --project . --out-dir dist` |
-| `lint` | `uv run --project . ruff format --check . && uv run --project . ruff check . && uv run --project . pyright && uv run --project . pip-audit`, with caches redirected into `.cache/` |
-| `lint-fix` | `uv run --project . ruff format . && uv run --project . ruff check . --fix && uv run --project . pyright && uv run --project . pip-audit`, with caches redirected into `.cache/` |
-| `test-unit` | `uv run --project . pytest --cov=src/<package_name> --cov-branch --cov-report=term-missing --cov-fail-under=80`, with pytest and coverage outputs stored under `.cache/` |
+| `install` | `mise exec -- uv sync --project . --frozen --all-extras --dev` using the shared root `.venv/` |
+| `build` | `mise exec -- uv sync --project . --frozen --all-extras --dev && mise exec -- uv build --project . --out-dir dist` |
+| `lint` | `mise exec -- uv run --project . ruff format --check . && mise exec -- uv run --project . ruff check . && mise exec -- uv run --project . pyright && mise exec -- uv run --project . pip-audit`, with caches redirected into `.cache/` |
+| `lint-fix` | `mise exec -- uv run --project . ruff format . && mise exec -- uv run --project . ruff check . --fix && mise exec -- uv run --project . pyright && mise exec -- uv run --project . pip-audit`, with caches redirected into `.cache/` |
+| `test-unit` | `mise exec -- uv run --project . pytest --cov=src/<package_name> --cov-branch --cov-report=term-missing --cov-fail-under=80`, with pytest and coverage outputs stored under `.cache/` |
 | `clean` | Remove `dist/` and `.cache/` inside `lib/` |
 | `all` | `build lint test-unit` |
-| `update-lockfile` | `uv lock --project . --upgrade` |
-| `run` | `uv run --project . python -m <package_name>` or the project CLI entry point |
+| `update-lockfile` | `mise exec -- uv lock --project . --upgrade` |
+| `run` | `mise exec -- uv run --project . python -m <package_name>` or the project CLI entry point |
 | `dev` | Same as `run`, optionally with repository-specific dev defaults |
-| `publish` | `uv publish --project .` after versioning and packaging are complete |
+| `publish` | `mise exec -- uv publish --project .` after versioning and packaging are complete |
 
 The root `Makefile` must remain the only contract for CI and contributors, in line with [agentme-edr-008](../devops/008-common-targets.md).
 

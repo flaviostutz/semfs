@@ -13,10 +13,10 @@ compatibility: Python 3.12+
 
 ## Overview
 
-Creates a complete Python project from scratch using `uv`, `pyproject.toml`, Ruff, Pyright,
-Pytest, and Makefiles. The default layout keeps the library self-contained under `lib/`, uses a
-shared root `.venv/`, redirects persistent caches into `.cache/`, and places runnable consumer
-projects under the sibling `examples/` folder.
+Creates a complete Python project from scratch using Mise, `uv`, `pyproject.toml`, Ruff,
+Pyright, Pytest, and Makefiles. The default layout keeps the library self-contained under `lib/`,
+uses a shared root `.venv/`, redirects persistent caches into `.cache/`, and places runnable
+consumer projects under the sibling `examples/` folder.
 
 Related EDRs: [agentme-edr-014](../../014-python-project-tooling.md), [agentme-edr-016](../../../principles/016-cross-language-module-structure.md)
 
@@ -39,15 +39,30 @@ Ask for or infer from context:
 
 Create these files first.
 
+**`./.mise.toml`**
+
+```toml
+[tools]
+python = "3.13"
+uv = "latest"
+```
+
+Replace `3.13` with the chosen Python version and pin any additional project CLIs used by the project here.
+
 **`./Makefile`**
 
 ```makefile
 SHELL := /bin/bash
+MISE := mise exec --
 ROOT_DIR := $(abspath .)
 export UV_PROJECT_ENVIRONMENT := $(ROOT_DIR)/.venv
 export UV_CACHE_DIR := $(ROOT_DIR)/.cache/uv
 
 all: build lint test
+
+setup:
+	mise install
+	$(MAKE) install
 
 install:
 	$(MAKE) -C lib install
@@ -70,9 +85,9 @@ test-examples: build
 	@for dir in examples/*; do \
 		if [ -f "$$dir/pyproject.toml" ]; then \
 			echo ">>> Running $$dir"; \
-			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv sync --project "$$dir" --frozen || exit 1; \
-			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv pip install --python "$(UV_PROJECT_ENVIRONMENT)/bin/python" lib/dist/*.whl || exit 1; \
-			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" uv run --project "$$dir" python main.py || exit 1; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" $(MISE) uv sync --project "$$dir" --frozen || exit 1; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" $(MISE) uv pip install --python "$(UV_PROJECT_ENVIRONMENT)/bin/python" lib/dist/*.whl || exit 1; \
+			UV_PROJECT_ENVIRONMENT="$(UV_PROJECT_ENVIRONMENT)" UV_CACHE_DIR="$(UV_CACHE_DIR)" $(MISE) uv run --project "$$dir" python main.py || exit 1; \
 		fi; \
 	done
 
@@ -82,9 +97,7 @@ clean:
 	rm -rf .venv
 ```
 
-The root `Makefile` keeps the repository clean by delegating package work to `lib/` and treating each example directory as an independent consumer project.
-
-If the repository already uses Mise, wrap the delegated commands with `mise exec --` and pin both Python and uv in `.mise.toml`.
+The root `Makefile` keeps the repository clean by delegating package work to `lib/` and treating each example directory as an independent consumer project. Child Makefiles own the actual `mise exec -- <tool>` calls.
 
 **`./.gitignore`**
 
@@ -106,6 +119,7 @@ Keep this README focused on the repository or workspace. Put Getting Started nea
 ## Getting Started
 
 ```sh
+make setup
 make test
 ```
 
@@ -121,6 +135,7 @@ artifacts, and library-specific Makefile targets.
 
 ```makefile
 SHELL := /bin/bash
+MISE := mise exec --
 ROOT_DIR := $(abspath ..)
 export UV_PROJECT_ENVIRONMENT := $(ROOT_DIR)/.venv
 export UV_CACHE_DIR := $(ROOT_DIR)/.cache/uv
@@ -133,34 +148,34 @@ PACKAGE_NAME ?= your_package
 all: build lint test-unit
 
 install:
-	uv sync --project . --frozen --all-extras --dev
+	$(MISE) uv sync --project . --frozen --all-extras --dev
 
 build: install
 	rm -rf dist
-	uv build --project . --out-dir dist
+	$(MISE) uv build --project . --out-dir dist
 
 lint: install
-	uv run --project . ruff format --check .
-	uv run --project . ruff check .
-	uv run --project . pyright
-	uv run --project . pip-audit
+	$(MISE) uv run --project . ruff format --check .
+	$(MISE) uv run --project . ruff check .
+	$(MISE) uv run --project . pyright
+	$(MISE) uv run --project . pip-audit
 
 lint-fix: install
-	uv run --project . ruff format .
-	uv run --project . ruff check . --fix
-	uv run --project . pyright
-	uv run --project . pip-audit
+	$(MISE) uv run --project . ruff format .
+	$(MISE) uv run --project . ruff check . --fix
+	$(MISE) uv run --project . pyright
+	$(MISE) uv run --project . pip-audit
 
 test-unit: install
-	uv run --project . pytest -o cache_dir=.cache/pytest --cov=src/$(PACKAGE_NAME) --cov-branch --cov-report=term-missing --cov-report=html:.cache/htmlcov --cov-fail-under=80
+	$(MISE) uv run --project . pytest -o cache_dir=.cache/pytest --cov=src/$(PACKAGE_NAME) --cov-branch --cov-report=term-missing --cov-report=html:.cache/htmlcov --cov-fail-under=80
 
 run: install
-	uv run --project . python -m $(PACKAGE_NAME)
+	$(MISE) uv run --project . python -m $(PACKAGE_NAME)
 
 dev: run
 
 update-lockfile:
-	uv lock --project . --upgrade
+	$(MISE) uv lock --project . --upgrade
 
 clean:
 	rm -rf dist .cache
@@ -231,7 +246,7 @@ This README is the published package README referenced by `lib/pyproject.toml`.
 ## Getting Started
 
 ```sh
-uv sync --dev
+make setup
 make test
 ```
 
@@ -331,11 +346,12 @@ Examples must import the package as a consumer would. Avoid relative imports bac
 
 After creating the files:
 
-1. Run `make install`.
-2. Run `make lint-fix`.
-3. Run `make test`.
-4. Run `make build`.
-5. Fix all failures before finishing.
+1. Run `make setup`.
+2. Run `make install`.
+3. Run `make lint-fix`.
+4. Run `make test`.
+5. Run `make build`.
+6. Fix all failures before finishing.
 
 ## Examples
 
@@ -352,7 +368,7 @@ After creating the files:
 
 ## Edge Cases
 
-- If the repository already has a root `.mise.toml`, pin Python and uv there instead of assuming host-installed tools.
+- Pin Python and uv in the root `.mise.toml`; do not assume host-installed tools.
 - If the project is fewer than 100 lines and explicitly marked as a spike or experiment, examples and linting may be skipped only when another applicable XDR allows it.
 - If an example needs extra dependencies, keep them in that example's `pyproject.toml`; do not move them into `lib/pyproject.toml` unless the library truly needs them.
 - If the user asks for an app with framework-specific needs such as FastAPI or Django, keep this baseline and add the framework config on top instead of replacing it.

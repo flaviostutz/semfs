@@ -23,6 +23,8 @@ def run_benchmark(
     config: IndexConfig | Mapping[str, Any],
     query_text: str,
     output_dir: Path | str = "benchmarks",
+    *,
+    verbose: bool = False,
 ) -> BenchmarkRun:
     """Run one benchmark scenario and persist its JSON artifact."""
     parsed_config = IndexConfig.model_validate(config)
@@ -34,12 +36,12 @@ def run_benchmark(
     query_config = parsed_config.model_copy(update={"mode": "stale"})
 
     index_started = perf_counter()
-    semfs.index(str(dataset_root), index_config)
+    semfs.index(str(dataset_root), index_config, verbose=verbose)
     index_seconds = perf_counter() - index_started
 
     query_started = perf_counter()
-    semfs.chunks(benchmark_query, str(dataset_root), config=query_config)
-    semfs.files(benchmark_query, str(dataset_root), query_config)
+    semfs.chunks(benchmark_query, str(dataset_root), config=query_config, verbose=verbose)
+    semfs.files(benchmark_query, str(dataset_root), query_config, verbose=verbose)
     query_seconds = perf_counter() - query_started
 
     spec = dataset_spec(dataset_name)
@@ -64,13 +66,15 @@ def run_benchmark_suite(
     config: IndexConfig | Mapping[str, Any],
     query_text: str,
     output_dir: Path | str = "benchmarks",
+    *,
+    verbose: bool = False,
 ) -> list[BenchmarkRun]:
     """Generate both benchmark corpora, run them, and persist one artifact per dataset."""
     results: list[BenchmarkRun] = []
     for dataset_name in ("small", "large"):
         dataset_root = root / dataset_name
         create_dataset(dataset_root, dataset_name)
-        results.append(run_benchmark(dataset_name, dataset_root, config, query_text, output_dir))
+        results.append(run_benchmark(dataset_name, dataset_root, config, query_text, output_dir, verbose=verbose))
     return results
 
 

@@ -7,18 +7,18 @@ import typer
 
 import semfs
 from semfs.benchmark import write_placeholder_benchmark
-from semfs.config import load_config
+from semfs.config import default_index_config, load_config
 from semfs.errors import SemfsError
 from semfs.models import IndexConfig
 
-app = typer.Typer(help="Semantic file queries for local folders.")
+app = typer.Typer(help="Semantic file queries for local folders.", rich_markup_mode=None)
 
 
 def _require_loaded_config(config_path: Path | None) -> IndexConfig:
-    loaded_config = load_config(config_path)
-    if loaded_config is None:
-        raise typer.Exit(code=1)
-    return loaded_config
+    loaded_config = load_config(config_path, allow_missing=config_path is None)
+    if loaded_config is not None:
+        return loaded_config
+    return default_index_config()
 
 
 def version_callback(value: bool | None) -> None:
@@ -49,7 +49,7 @@ def index(
     try:
         loaded_config = _require_loaded_config(config)
         typer.echo(f"Starting index '{loaded_config.name}' for {directory}")
-        state = semfs.index(str(directory), loaded_config)
+        state = semfs.index(str(directory), loaded_config, verbose=verbose)
         if verbose:
             typer.echo(f"Using output path: {state.database_path}")
         typer.echo(f"Indexed {state.indexed_files} files and {state.indexed_chunks} chunks")
@@ -72,7 +72,11 @@ def chunks(
     try:
         loaded_config = _require_loaded_config(config)
         results = semfs.chunks(
-            {"text": query, "max_results": top, "max_distance": distance}, str(directory), contents, loaded_config
+            {"text": query, "max_results": top, "max_distance": distance},
+            str(directory),
+            contents,
+            loaded_config,
+            verbose=verbose,
         )
         for finding in results:
             typer.echo(f"{finding.file}[{finding.from_line}:{finding.to_line}]")
@@ -98,7 +102,10 @@ def files(
     try:
         loaded_config = _require_loaded_config(config)
         results = semfs.files(
-            {"text": query, "max_results": top, "max_distance": distance}, str(directory), loaded_config
+            {"text": query, "max_results": top, "max_distance": distance},
+            str(directory),
+            loaded_config,
+            verbose=verbose,
         )
         for finding in results:
             typer.echo(finding.file)

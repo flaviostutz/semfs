@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from semfs.config import load_config, parse_index_config, parse_query_request, resolve_config_path
+from semfs.config import default_index_config, load_config, parse_index_config, parse_query_request, resolve_config_path
 from semfs.errors import ConfigError
 from semfs.models import ChunkingEdges, IndexMode
 
@@ -60,3 +60,15 @@ def test_all_index_modes_are_accepted() -> None:
 def test_invalid_index_mode_is_rejected() -> None:
     with pytest.raises(ConfigError):
         parse_index_config({**_config_payload(), "mode": "unsupported"})
+
+
+def test_default_index_config_matches_cli_defaults() -> None:
+    config = default_index_config()
+
+    assert config.name == "index0"
+    assert config.filter == "**/*"
+    assert config.mode is IndexMode.AUTO
+    assert config.chunking.size == 500
+    assert config.chunking.overlap == 250
+    assert config.chunking.edges is ChunkingEdges.AUTO
+    assert config.model == "sentence-transformers/all-MiniLM-L6-v2"

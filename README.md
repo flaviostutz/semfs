@@ -5,7 +5,12 @@ Semantic file queries for local folders via a Python library and CLI.
 ## Getting Started
 
 ```sh
+make setup
 make test
+```
+
+```sh
+make run
 ```
 
 The published Python package lives in `lib/` and runnable consumer projects live in `examples/`.
@@ -33,10 +38,11 @@ make run
 
 User-facing CLI and library examples live in `lib/README.md`.
 
-From a source checkout, install the shared environment first and then run the package through `lib/`:
+From a source checkout, prepare the shared environment once and then use the root Makefile targets:
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv run --project lib semfs --help
+make setup
+make run
 ```
 
 ## Benchmark Example
@@ -44,8 +50,7 @@ UV_PROJECT_ENVIRONMENT="$PWD/.venv" uv run --project lib semfs --help
 Run the benchmark consumer project against the built wheel when you want fresh artifacts under `benchmarks/`:
 
 ```sh
+make setup
 make build
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv sync --project examples/benchmark-corpora --frozen
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv pip install --python "$PWD/.venv/bin/python" --force-reinstall lib/dist/*.whl
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project examples/benchmark-corpora python examples/benchmark-corpora/main.py
+make -C examples/benchmark-corpora run
 ```

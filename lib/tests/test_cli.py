@@ -32,6 +32,27 @@ def test_chunks_cli_outputs_ranked_headers(sample_docs: Path, fake_model: object
     assert "alpha concept" in result.output
 
 
+def test_index_cli_uses_default_config_when_semfsrc_is_missing(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["index", str(sample_docs), "--verbose"])
+
+    assert result.exit_code == 0
+    assert "Starting index 'index0'" in result.output
+    assert ".semfs/index0" in result.output
+
+
+def test_files_cli_uses_default_config_when_semfsrc_is_missing(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["files", str(sample_docs), "alpha", "--top", "5"])
+
+    assert result.exit_code == 0
+    assert result.output.splitlines() == ["alpha.md", "beta.md"]
+
+
 def test_chunks_cli_reports_actionable_digest_errors(sample_docs: Path, fake_model: object, tmp_path: Path) -> None:
     _ = fake_model
     runner = CliRunner()

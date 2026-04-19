@@ -1,6 +1,6 @@
 ---
 name: agentme-edr-010-go-project-tooling-and-structure
-description: Defines the standard Go project toolchain, layout, and Makefile workflow for agentme-based projects. Use when scaffolding or reviewing Go projects.
+description: Defines the standard Go project toolchain, layout, and Makefile workflow using Mise for agentme-based projects. Use when scaffolding or reviewing Go projects.
 ---
 
 # agentme-edr-010: Go project tooling and structure
@@ -13,7 +13,7 @@ What tooling and project structure should Go projects follow to ensure consisten
 
 ## Decision Outcome
 
-**Use the standard Go toolchain (`go build`, `go test`) with `golangci-lint`, module-root folder responsibilities from [agentme-edr-016](../principles/016-cross-language-module-structure.md), feature packages in subdirectories, a `cli/` package for command wiring, and a Makefile as the single entry point for all development tasks.**
+**Use a Mise-managed Go toolchain with `go build`, `go test`, and `golangci-lint`, module-root folder responsibilities from [agentme-edr-016](../principles/016-cross-language-module-structure.md), feature packages in subdirectories, a `cli/` package for command wiring, and a Makefile as the single entry point for all development tasks.**
 
 A predictable layout and minimal external tooling keep Go projects approachable, fast to build, and easy to distribute as cross-platform binaries.
 
@@ -23,18 +23,19 @@ A predictable layout and minimal external tooling keep Go projects approachable,
 
 | Tool | Purpose |
 |------|---------|
+| **Mise** | Mandatory tool version management and command runner for Go, `golangci-lint`, and project CLIs |
 | **go toolchain** | Compilation, testing, formatting (`go build`, `go test`, `go fmt`, `go vet`, `go mod`) |
 | **golangci-lint** | Linting — aggregates many linters in one fast run; configured via `.golangci.yml` |
 | **monotag** | Version tagging from git history for the `publish` target |
 
-All commands are run exclusively through the Makefile, never ad-hoc.
-When the repository has a root `.mise.toml`, `go`, `golangci-lint`, and any other Go-related CLIs used by the project **MUST** be pinned there and resolved from the Mise-managed environment rather than the host machine.
+All commands are run exclusively through the Makefile, never ad-hoc. The project root **MUST** define a `.mise.toml` that pins `go`, `golangci-lint`, and any other Go-related CLIs used by the project. Contributors and CI **MUST** bootstrap with `make setup` or `mise install`, then invoke routine work with `make <target>`. Each Makefile recipe **MUST** execute the underlying tool through `mise exec -- <tool> ...`, following [agentme-edr-017](../devops/017-tool-execution-and-scripting.md).
 Direct installation of project-required Go CLIs with `go install ...@latest` as a repair step is **NOT** allowed unless an XDR for that repository explicitly permits it.
 
 #### Project structure
 
 ```
 /                              # project root or Go module root inside a monorepo
+├── .mise.toml                 # pinned Go, golangci-lint, and related CLIs
 ├── Makefile                   # build, lint, test, publish, and utility targets
 ├── README.md                  # module README with usage and development commands
 ├── .gitignore                 # MUST ignore dist/ and .cache/
@@ -74,36 +75,36 @@ Direct installation of project-required Go CLIs with `go install ...@latest` as 
 - Module path: `github.com/<owner>/<project>` (or the relevant VCS path for the project)
 - Use the latest stable Go version (e.g. `go 1.24`).
 - Separate `require` blocks: direct dependencies first, then `// indirect` dependencies.
-- If the repository uses Mise, the Go version declared in `go.mod` and the Go version pinned in `.mise.toml` **MUST** stay aligned.
+- The Go version declared in `go.mod` and the Go version pinned in `.mise.toml` **MUST** stay aligned.
 
 #### Makefile targets
 
 | Target | Description |
 |--------|-------------|
 | `all` | Default; runs `build lint test` in sequence |
-| `build` | `go mod download && go build -o dist/<binary>` with Go caches redirected into `.cache/` |
+| `build` | `mise exec -- go mod download && mise exec -- go build -o dist/<binary>` with Go caches redirected into `.cache/` |
 | `build-all` | Cross-compile for all target platforms (darwin/linux/windows × amd64/arm64) |
 | `build-arch-os` | Compile for a specific `OS` and `ARCH` environment variable pair; output to `dist/${OS}-${ARCH}/<binary>` |
-| `install` | `go mod download` |
-| `lint` | `golangci-lint run ./...` with its cache redirected into `.cache/` |
-| `lint-fix` | `golangci-lint run --fix ./...` with its cache redirected into `.cache/` |
-| `test` | `go test -cover ./...` — runs all tests with coverage and stores disposable outputs under `.cache/` |
-| `test-unit` | `go test -cover ./...` — alias for unit tests only (same here; integration tests get a separate tag) |
-| `coverage` | `go tool cover -func .cache/coverage.out` — displays coverage summary |
+| `install` | `mise exec -- go mod download` |
+| `lint` | `mise exec -- golangci-lint run ./...` with its cache redirected into `.cache/` |
+| `lint-fix` | `mise exec -- golangci-lint run --fix ./...` with its cache redirected into `.cache/` |
+| `test` | `mise exec -- go test -cover ./...` — runs all tests with coverage and stores disposable outputs under `.cache/` |
+| `test-unit` | `mise exec -- go test -cover ./...` — alias for unit tests only (same here; integration tests get a separate tag) |
+| `coverage` | `mise exec -- go tool cover -func .cache/coverage.out` — displays coverage summary |
 | `clean` | Remove `dist/` and `.cache/` |
-| `start` | `go run ./ <default-args>` — launch the binary locally for dev use |
-| `publish` | Tag with `monotag`, then push tag + binaries to GitHub Releases |
+| `start` | `mise exec -- go run ./ <default-args>` — launch the binary locally for dev use |
+| `publish` | Tag with `mise exec -- npx -y monotag ...`, then push tag + binaries to GitHub Releases |
 
-When the repository uses Mise, the intended invocation pattern is:
+The required invocation pattern is:
 
 ```sh
-mise install
-mise exec -- make build
-mise exec -- make test
-mise exec -- make lint
+make setup
+make build
+make test
+make lint
 ```
 
-Using `make build`, `make test`, or `make lint` from an already activated Mise shell is equivalent.
+The Makefile recipes themselves must use `mise exec --` for the underlying tool commands.
 
 #### Cross-platform binary distribution
 

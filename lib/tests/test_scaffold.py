@@ -32,7 +32,7 @@ def test_public_api_returns_scaffold_state(tmp_path: Path, fake_model: object) -
 
     assert state.status is IndexStatus.READY
     assert state.index_name == "index0"
-    assert state.database_path.endswith(".semfs/index0/index.db")
+    assert state.database_path.endswith(".semfs/index0")
     assert semfs.chunks({"text": "what is x?"}, str(tmp_path), fetch_contents=False, config=config) == []
     assert semfs.files({"text": "what is x?"}, str(tmp_path), config) == []
 
@@ -80,6 +80,12 @@ def test_missing_config_is_reported(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigError):
         load_config(missing)
+
+
+def test_load_config_returns_none_when_default_file_is_missing() -> None:
+    config = load_config(allow_missing=True)
+
+    assert config is None
 
 
 def test_module_entry_point_runs(monkeypatch: pytest.MonkeyPatch) -> None:

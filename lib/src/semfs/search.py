@@ -1,8 +1,8 @@
 """Search entry points for semfs."""
 
-import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 from semfs.chunking import merge_contiguous_findings
@@ -10,7 +10,8 @@ from semfs.config import parse_index_config, parse_query_request
 from semfs.errors import FileProcessingError
 from semfs.indexer import load_embedding_model, open_prepared_index
 from semfs.models import ChunkFinding, FileFinding, IndexConfig, QueryRequest
-from semfs.storage import digest_contents, fetch_chunk_candidates, read_file_snapshot, serialize_embedding
+from semfs.storage import IndexStore, digest_contents, fetch_chunk_candidates, read_file_snapshot
+from semfs.verbose import emit_verbose, format_seconds
 
 
 def _candidate_k(query: QueryRequest) -> int:
@@ -21,18 +22,44 @@ def _score_from_distance(distance: float) -> float:
     return 1.0 / (1.0 + distance)
 
 
-def _matching_chunk_rows(connection: sqlite3.Connection, query: QueryRequest, model_name: str) -> list[sqlite3.Row]:
+def _matching_chunk_rows(
+    store: IndexStore,
+    query: QueryRequest,
+    model_name: str,
+    *,
+    verbose: bool = False,
+) -> list[dict[str, Any]]:
+    model_load_started = perf_counter()
     model = load_embedding_model(model_name)
+    emit_verbose(verbose, f"Loaded query model {model_name} in {format_seconds(perf_counter() - model_load_started)}")
+
+    query_embedding_started = perf_counter()
     query_vector = model.encode([query.text], normalize_embeddings=True)[0]
-    rows = fetch_chunk_candidates(
-        connection,
-        serialize_embedding([float(value) for value in query_vector]),
-        _candidate_k(query),
+    emit_verbose(
+        verbose,
+        f"Encoded query text into embedding in {format_seconds(perf_counter() - query_embedding_started)}",
     )
-    return [row for row in rows if query.max_distance is None or float(row["distance"]) <= query.max_distance]
+
+    chroma_started = perf_counter()
+    rows = fetch_chunk_candidates(
+        store,
+        [float(value) for value in query_vector],
+        _candidate_k(query),
+        verbose=verbose,
+    )
+    emit_verbose(verbose, f"Fetched {len(rows)} candidate rows in {format_seconds(perf_counter() - chroma_started)}")
+
+    filter_started = perf_counter()
+    filtered = [row for row in rows if query.max_distance is None or float(row["distance"]) <= query.max_distance]
+    emit_verbose(
+        verbose,
+        f"Applied distance filter in {format_seconds(perf_counter() - filter_started)}; {len(filtered)} rows remain",
+    )
+    return filtered
 
 
-def _chunk_findings_from_rows(rows: list[sqlite3.Row]) -> list[ChunkFinding]:
+def _chunk_findings_from_rows(rows: list[dict[str, Any]], *, verbose: bool = False) -> list[ChunkFinding]:
+    parse_started = perf_counter()
     findings = [
         ChunkFinding.model_validate(
             {
@@ -45,7 +72,15 @@ def _chunk_findings_from_rows(rows: list[sqlite3.Row]) -> list[ChunkFinding]:
         for row in rows
     ]
     merged = merge_contiguous_findings(findings)
-    return sorted(merged, key=lambda finding: (-finding.score, finding.file, finding.from_line))
+    ranked = sorted(merged, key=lambda finding: (-finding.score, finding.file, finding.from_line))
+    emit_verbose(
+        verbose,
+        (
+            f"Parsed {len(rows)} rows into {len(findings)} chunk findings and {len(ranked)} merged results in "
+            f"{format_seconds(perf_counter() - parse_started)}"
+        ),
+    )
+    return ranked
 
 
 def _read_excerpt(root: Path, finding: ChunkFinding, expected_digest: str) -> str:
@@ -75,22 +110,25 @@ def chunks(
     directory: str,
     fetch_contents: bool = False,
     config: IndexConfig | Mapping[str, Any] | None = None,
+    *,
+    verbose: bool = False,
 ) -> list[ChunkFinding]:
     """Return ranked chunk findings for one semantic query."""
     parsed_query = parse_query_request(query)
     parsed_config = parse_index_config(config)
 
-    with open_prepared_index(directory, parsed_config) as prepared:
-        rows = _matching_chunk_rows(prepared.connection, parsed_query, parsed_config.model)
-        ranked = _chunk_findings_from_rows(rows)
+    with open_prepared_index(directory, parsed_config, verbose=verbose) as prepared:
+        rows = _matching_chunk_rows(prepared.store, parsed_query, parsed_config.model, verbose=verbose)
+        ranked = _chunk_findings_from_rows(rows, verbose=verbose)
         final = ranked[: parsed_query.max_results]
 
         if not fetch_contents:
             return final
 
         with_contents: list[ChunkFinding] = []
+        excerpt_started = perf_counter()
         for finding in final:
-            snapshot = read_file_snapshot(prepared.connection, finding.file)
+            snapshot = read_file_snapshot(prepared.store, finding.file)
             if snapshot is None:
                 message = (
                     f"Failed action `chunks` for {finding.file}: indexed snapshot metadata is missing. "
@@ -101,6 +139,14 @@ def chunks(
             contents_text = _read_excerpt(prepared.root, finding, snapshot.content_digest)
             with_contents.append(finding.model_copy(update={"contents": contents_text}))
 
+        emit_verbose(
+            verbose,
+            (
+                f"Read and verified excerpt contents for {len(with_contents)} results in "
+                f"{format_seconds(perf_counter() - excerpt_started)}"
+            ),
+        )
+
         return with_contents
 
 
@@ -108,14 +154,17 @@ def files(
     query: QueryRequest | Mapping[str, Any],
     directory: str,
     config: IndexConfig | Mapping[str, Any] | None = None,
+    *,
+    verbose: bool = False,
 ) -> list[FileFinding]:
     """Return ranked file findings derived from semantic chunk candidates."""
     parsed_query = parse_query_request(query)
     parsed_config = parse_index_config(config)
 
-    with open_prepared_index(directory, parsed_config) as prepared:
-        rows = _matching_chunk_rows(prepared.connection, parsed_query, parsed_config.model)
+    with open_prepared_index(directory, parsed_config, verbose=verbose) as prepared:
+        rows = _matching_chunk_rows(prepared.store, parsed_query, parsed_config.model, verbose=verbose)
 
+    rank_started = perf_counter()
     best_distances: dict[str, float] = {}
     for row in rows:
         file_path = str(row["file_path"])
@@ -125,7 +174,15 @@ def files(
             best_distances[file_path] = distance
 
     ranked = sorted(best_distances.items(), key=lambda item: (item[1], item[0]))
-    return [
+    result = [
         FileFinding.model_validate({"file": file_path, "best_score": _score_from_distance(distance)})
         for file_path, distance in ranked[: parsed_query.max_results]
     ]
+    emit_verbose(
+        verbose,
+        (
+            f"Parsed and ranked file findings in {format_seconds(perf_counter() - rank_started)}; "
+            f"returning {len(result)} files"
+        ),
+    )
+    return result

@@ -27,7 +27,7 @@ def test_index_returns_initialized_state(tmp_path: Path, fake_model: object) -> 
 
     assert state.status is IndexStatus.READY
     assert state.index_name == "index0"
-    assert state.database_path.endswith(".semfs/index0/index.db")
+    assert state.database_path.endswith(".semfs/index0")
     assert state.schema_version == "1"
     assert state.embedding_dimensions == 3
     assert state.indexed_files == 1

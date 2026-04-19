@@ -35,6 +35,16 @@ Ask for (or infer from context):
 
 ### Phase 2: Create root files
 
+**`./.mise.toml`** (replace `[go-version]` and `[golangci-lint-version]`):
+
+```toml
+[tools]
+go = "[go-version]"
+golangci-lint = "[golangci-lint-version]"
+```
+
+Pin any additional project CLIs used by the Makefile here as well. Use an explicit `golangci-lint` version rather than `latest`.
+
 **`go.mod`** (replace `[module]`, `[go-version]`):
 
 ```
@@ -81,6 +91,7 @@ func main() {
 
 ```makefile
 SHELL := /bin/bash
+MISE := mise exec --
 
 BINARY := [binary]
 CACHE_DIR := .cache
@@ -90,10 +101,14 @@ export GOLANGCI_LINT_CACHE := $(abspath $(CACHE_DIR)/golangci-lint)
 
 all: build lint test
 
+setup:
+	mise install
+	$(MAKE) install
+
 build: install
 	@mkdir -p dist
 	@mkdir -p $(GOCACHE) $(GOMODCACHE)
-	go build -o dist/$(BINARY) .
+	$(MISE) go build -o dist/$(BINARY) .
 
 build-all: build-arch-os-darwin-amd64 build-arch-os-darwin-arm64 build-arch-os-linux-amd64 build-arch-os-linux-arm64 build-arch-os-windows-amd64
 	@echo "All platform builds complete"
@@ -119,36 +134,36 @@ build-arch-os:
 	@echo "Compiling $(BINARY) for ${OS}-${ARCH}..."
 	@mkdir -p dist/${OS}-${ARCH}
 	@mkdir -p $(GOCACHE) $(GOMODCACHE)
-	go mod download
-	GOOS=${OS} GOARCH=${ARCH} CGO_ENABLED=0 go build -a -o dist/${OS}-${ARCH}/$(BINARY) .
+	$(MISE) go mod download
+	GOOS=${OS} GOARCH=${ARCH} CGO_ENABLED=0 $(MISE) go build -a -o dist/${OS}-${ARCH}/$(BINARY) .
 	@echo "Done"
 
 install:
-	go mod download
+	$(MISE) go mod download
 
 lint:
-	golangci-lint run ./...
+	$(MISE) golangci-lint run ./...
 
 lint-fix:
-	golangci-lint run --fix ./...
+	$(MISE) golangci-lint run --fix ./...
 
 test:
-	go test -cover ./...
+	$(MISE) go test -cover ./...
 
 test-coverage:
 	@mkdir -p $(CACHE_DIR)
-	go test -coverprofile=$(CACHE_DIR)/coverage.out ./...
-	go tool cover -func $(CACHE_DIR)/coverage.out
+	$(MISE) go test -coverprofile=$(CACHE_DIR)/coverage.out ./...
+	$(MISE) go tool cover -func $(CACHE_DIR)/coverage.out
 
 benchmark:
-	go test -bench . -benchmem -count 5 ./...
+	$(MISE) go test -bench . -benchmem -count 5 ./...
 
 clean:
 	rm -rf dist
 	rm -rf .cache
 
 start:
-	go run ./ [subcommand]
+	$(MISE) go run ./ [subcommand]
 ```
 
 **`.golangci.yml`**:
@@ -190,6 +205,7 @@ coverage.out
 
 ## Development
 
+	make setup
 	make build    # compile binary to dist/
 	make lint     # run golangci-lint with cache in .cache/
 	make test     # run tests with coverage artifacts in .cache/
@@ -300,7 +316,7 @@ func Run(args []string) {
 After creating all files, run the following in the project root:
 
 ```bash
-go mod tidy
+make setup
 make all
 ```
 
@@ -316,6 +332,6 @@ Fix any compile or lint errors before finishing.
 - All tests co-located (`*_test.go` next to the file under test).
 - Use `tests_integration/` for integration flows and `tests_benchmark/` when benchmarks need dedicated harnesses or datasets.
 - Log with `logrus`; never use `fmt.Println` for diagnostic/debug output.
-- All development tasks go through `make` targets — never run `go` directly for routine ops.
+- All development tasks go through `make` targets. The Makefile recipes call `mise exec -- go ...` and related tools directly.
 - Do not create an `internal/` package unless explicitly justified (importability is preferred).
 - If the project is a reusable library, place consumer examples in a sibling `examples/` folder outside the module root and keep them on the public module import path.

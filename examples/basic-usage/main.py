@@ -23,10 +23,18 @@ def main() -> None:
             docs_dir = Path(temp_dir) / "docs"
             docs_dir.mkdir(parents=True, exist_ok=True)
             _write_sample_docs(docs_dir)
-            state = semfs.index(str(docs_dir), config)
+            state = semfs.index(str(docs_dir), config, verbose=True)
             print(state.status)
-            print(semfs.chunks({"text": "alpha", "max_results": 5}, str(docs_dir), fetch_contents=False, config=config))
-            print(semfs.files({"text": "alpha", "max_results": 5}, str(docs_dir), config))
+            print(
+                semfs.chunks(
+                    {"text": "alpha", "max_results": 5},
+                    str(docs_dir),
+                    fetch_contents=False,
+                    config=config,
+                    verbose=True,
+                )
+            )
+            print(semfs.files({"text": "alpha", "max_results": 5}, str(docs_dir), config, verbose=True))
     except SemfsError as exc:
         print(exc)
 

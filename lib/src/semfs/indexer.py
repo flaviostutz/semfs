@@ -1,6 +1,5 @@
 """Indexing entry point and embedding-model loading utilities for semfs."""
 
-import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 from typing import Any
 
 from semfs.chunking import chunk_text
@@ -16,19 +16,21 @@ from semfs.errors import FileProcessingError, ModelUnavailableError
 from semfs.models import ChunkRecord, FileSnapshot, IndexConfig, IndexMode, IndexState, IndexStatus
 from semfs.storage import (
     SCHEMA_VERSION,
+    IndexStore,
     build_file_snapshot_from_contents,
     chunking_fingerprint,
-    connect_database,
     default_index_path,
     detect_snapshot_drift,
     index_counts,
     index_is_usable,
     metadata_value,
+    open_index_store,
     read_index_metadata,
     replace_index_data,
-    reset_schema,
+    reset_store,
     write_index_metadata,
 )
+from semfs.verbose import emit_verbose, format_seconds
 
 
 @dataclass(slots=True)
@@ -37,7 +39,7 @@ class PreparedIndex:
 
     root: Path
     config: IndexConfig
-    connection: sqlite3.Connection
+    store: IndexStore
     state: IndexState
     cleanup: Any | None = None
 
@@ -111,20 +113,44 @@ def _load_indexable_sources(root: Path, pattern: str) -> list[tuple[Path, str]]:
     return sources
 
 
-def _build_chunk_records(root: Path, config: IndexConfig) -> tuple[int, list[ChunkRecord], list[FileSnapshot]]:
+def _build_chunk_records(
+    root: Path, config: IndexConfig, *, verbose: bool = False
+) -> tuple[int, list[ChunkRecord], list[FileSnapshot]]:
+    model_load_started = perf_counter()
     model = load_embedding_model(config.model)
+    emit_verbose(
+        verbose,
+        f"Loaded embedding model {config.model} in {format_seconds(perf_counter() - model_load_started)}",
+    )
+
+    dimensions_started = perf_counter()
     dimensions = embedding_dimensions(config.model)
+    emit_verbose(
+        verbose,
+        f"Resolved embedding dimensions ({dimensions}) in {format_seconds(perf_counter() - dimensions_started)}",
+    )
+
+    tree_walk_started = perf_counter()
+    sources = _load_indexable_sources(root, config.filter)
+    emit_verbose(
+        verbose,
+        f"Walked source tree and loaded {len(sources)} files in {format_seconds(perf_counter() - tree_walk_started)}",
+    )
+
     next_chunk_id = 1
     chunk_records: list[ChunkRecord] = []
     snapshots: list[FileSnapshot] = []
+    total_embedding_seconds = 0.0
 
-    for file_path, contents in _load_indexable_sources(root, config.filter):
+    for file_path, contents in sources:
         spans = chunk_text(contents, file_path.relative_to(root), config.chunking)
         snapshots.append(build_file_snapshot_from_contents(root, file_path, contents, len(spans)))
         if not spans:
             continue
 
+        embedding_started = perf_counter()
         embeddings = model.encode([span.text for span in spans], normalize_embeddings=True)
+        total_embedding_seconds += perf_counter() - embedding_started
         for span, embedding in zip(spans, embeddings, strict=True):
             chunk_records.append(
                 ChunkRecord(
@@ -137,23 +163,31 @@ def _build_chunk_records(root: Path, config: IndexConfig) -> tuple[int, list[Chu
             )
             next_chunk_id += 1
 
+    emit_verbose(
+        verbose,
+        (
+            f"Prepared {len(chunk_records)} chunks from {len(snapshots)} files; "
+            f"embedding generation took {format_seconds(total_embedding_seconds)}"
+        ),
+    )
+
     return dimensions, chunk_records, snapshots
 
 
 def _build_state(
     root: Path,
     config: IndexConfig,
-    database_path: str,
+    store_path: str,
     status: IndexStatus,
-    connection: sqlite3.Connection,
+    store: IndexStore,
 ) -> IndexState:
-    metadata = read_index_metadata(connection)
-    indexed_files, indexed_chunks = index_counts(connection)
+    metadata = read_index_metadata(store)
+    indexed_files, indexed_chunks = index_counts(store)
     now = datetime.now(UTC)
     return IndexState(
         directory_path=str(root),
         index_name=config.name,
-        database_path=database_path,
+        database_path=store_path,
         schema_version=metadata_value(metadata, "schema_version", SCHEMA_VERSION),
         model_name=metadata_value(metadata, "model_name", config.model),
         embedding_dimensions=int(metadata_value(metadata, "embedding_dimensions", "0") or "0"),
@@ -166,86 +200,114 @@ def _build_state(
     )
 
 
-def _rebuild_index(connection: sqlite3.Connection, root: Path, config: IndexConfig) -> None:
-    dimensions, chunk_records, snapshots = _build_chunk_records(root, config)
-    reset_schema(connection, dimensions)
-    write_index_metadata(connection, config, dimensions)
-    replace_index_data(connection, snapshots, chunk_records)
+def _rebuild_index(store: IndexStore, root: Path, config: IndexConfig, *, verbose: bool = False) -> None:
+    rebuild_started = perf_counter()
+    emit_verbose(verbose, "Rebuilding index data")
+    dimensions, chunk_records, snapshots = _build_chunk_records(root, config, verbose=verbose)
+
+    reset_started = perf_counter()
+    reset_store(store)
+    emit_verbose(verbose, f"Reset Chroma collections in {format_seconds(perf_counter() - reset_started)}")
+
+    metadata_started = perf_counter()
+    write_index_metadata(store, config, dimensions)
+    emit_verbose(verbose, f"Wrote index metadata in {format_seconds(perf_counter() - metadata_started)}")
+
+    write_started = perf_counter()
+    replace_index_data(store, snapshots, chunk_records, verbose=verbose)
+    emit_verbose(verbose, f"Wrote snapshot/chunk records in {format_seconds(perf_counter() - write_started)}")
+    emit_verbose(verbose, f"Index rebuild completed in {format_seconds(perf_counter() - rebuild_started)}")
 
 
-def _prepare_persistent_index(root: Path, config: IndexConfig) -> PreparedIndex:
-    database_path = default_index_path(str(root), config.name)
-    connection = connect_database(database_path)
-    try:
-        usable = index_is_usable(connection, config)
-        source_paths = [path for path, _contents in _load_indexable_sources(root, config.filter)]
-        drift = detect_snapshot_drift(connection, root, source_paths) if usable else False
+def _prepare_persistent_index(root: Path, config: IndexConfig, *, verbose: bool = False) -> PreparedIndex:
+    store_path = default_index_path(str(root), config.name)
+    store = open_index_store(store_path, verbose=verbose)
 
-        rebuild = config.mode is IndexMode.REFRESH or not usable or (config.mode is IndexMode.AUTO and drift)
-        if rebuild:
-            _rebuild_index(connection, root, config)
-            status = IndexStatus.READY
-        else:
-            status = IndexStatus.STALE if drift else IndexStatus.READY
+    usability_started = perf_counter()
+    usable = index_is_usable(store, config)
+    emit_verbose(
+        verbose, f"Index compatibility check completed in {format_seconds(perf_counter() - usability_started)}"
+    )
 
-        state = _build_state(root, config, str(database_path), status, connection)
-        return PreparedIndex(root=root, config=config, connection=connection, state=state)
-    except Exception:
-        connection.close()
-        raise
+    source_scan_started = perf_counter()
+    source_paths = [path for path, _contents in _load_indexable_sources(root, config.filter)]
+    emit_verbose(
+        verbose,
+        f"Scanned current source files ({len(source_paths)}) in {format_seconds(perf_counter() - source_scan_started)}",
+    )
+
+    drift_started = perf_counter()
+    drift = detect_snapshot_drift(store, root, source_paths, verbose=verbose) if usable else False
+    if usable:
+        emit_verbose(verbose, f"Snapshot drift check completed in {format_seconds(perf_counter() - drift_started)}")
+
+    rebuild = config.mode is IndexMode.REFRESH or not usable or (config.mode is IndexMode.AUTO and drift)
+    if rebuild:
+        _rebuild_index(store, root, config, verbose=verbose)
+        status = IndexStatus.READY
+    else:
+        status = IndexStatus.STALE if drift else IndexStatus.READY
+
+    state = _build_state(root, config, str(store_path), status, store)
+    return PreparedIndex(root=root, config=config, store=store, state=state)
 
 
-def _prepare_ephemeral_index(root: Path, config: IndexConfig) -> PreparedIndex:
-    connection = connect_database(":memory:")
-    try:
-        _rebuild_index(connection, root, config)
-        state = _build_state(root, config, ":memory:", IndexStatus.EPHEMERAL, connection)
-        return PreparedIndex(root=root, config=config, connection=connection, state=state)
-    except Exception:
-        connection.close()
-        raise
+def _prepare_ephemeral_index(root: Path, config: IndexConfig, *, verbose: bool = False) -> PreparedIndex:
+    store = open_index_store(":memory:", in_memory=True, verbose=verbose)
+    _rebuild_index(store, root, config, verbose=verbose)
+    state = _build_state(root, config, ":memory:", IndexStatus.EPHEMERAL, store)
+    return PreparedIndex(root=root, config=config, store=store, state=state)
 
 
-def _prepare_transient_index(root: Path, config: IndexConfig) -> PreparedIndex:
+def _prepare_transient_index(root: Path, config: IndexConfig, *, verbose: bool = False) -> PreparedIndex:
     temporary_directory = TemporaryDirectory(prefix="semfs-transient-")
-    database_path = Path(temporary_directory.name) / "index.db"
-    connection = connect_database(database_path)
+    transient_path = Path(temporary_directory.name) / "chromadb"
+    store = open_index_store(transient_path, verbose=verbose)
     try:
-        _rebuild_index(connection, root, config)
-        state = _build_state(root, config, str(database_path), IndexStatus.EPHEMERAL, connection)
+        _rebuild_index(store, root, config, verbose=verbose)
+        state = _build_state(root, config, str(transient_path), IndexStatus.EPHEMERAL, store)
         return PreparedIndex(
             root=root,
             config=config,
-            connection=connection,
+            store=store,
             state=state,
             cleanup=temporary_directory.cleanup,
         )
     except Exception:
-        connection.close()
         temporary_directory.cleanup()
         raise
 
 
 @contextmanager
-def open_prepared_index(directory: str, config: IndexConfig | dict[str, Any] | None) -> Iterator[PreparedIndex]:
-    """Yield a ready-to-query index connection for one operation."""
+def open_prepared_index(
+    directory: str,
+    config: IndexConfig | dict[str, Any] | None,
+    *,
+    verbose: bool = False,
+) -> Iterator[PreparedIndex]:
+    """Yield a ready-to-query index store for one operation."""
     parsed_config = parse_index_config(config)
     root = _validate_directory(directory)
+    emit_verbose(verbose, f"Preparing index '{parsed_config.name}' in mode '{parsed_config.mode.value}' for {root}")
     if parsed_config.mode is IndexMode.INMEMORY:
-        prepared = _prepare_ephemeral_index(root, parsed_config)
+        prepared = _prepare_ephemeral_index(root, parsed_config, verbose=verbose)
     elif parsed_config.mode is IndexMode.TRANSIENT:
-        prepared = _prepare_transient_index(root, parsed_config)
+        prepared = _prepare_transient_index(root, parsed_config, verbose=verbose)
     else:
-        prepared = _prepare_persistent_index(root, parsed_config)
+        prepared = _prepare_persistent_index(root, parsed_config, verbose=verbose)
     try:
         yield prepared
     finally:
-        prepared.connection.close()
         if prepared.cleanup is not None:
             prepared.cleanup()
 
 
-def index(directory: str, config: IndexConfig | dict[str, Any] | None = None) -> IndexState:
+def index(
+    directory: str,
+    config: IndexConfig | dict[str, Any] | None = None,
+    *,
+    verbose: bool = False,
+) -> IndexState:
     """Create or refresh one index and return the resulting state summary."""
-    with open_prepared_index(directory, config) as prepared:
+    with open_prepared_index(directory, config, verbose=verbose) as prepared:
         return prepared.state

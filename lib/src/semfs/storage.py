@@ -1,98 +1,100 @@
-"""Storage helpers for semfs."""
+"""Storage helpers for semfs - ChromaDB backend."""
 
 import hashlib
 import json
-import sqlite3
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-
-import sqlite_vec  # pyright: ignore[reportMissingTypeStubs]
+from time import perf_counter
+from typing import Any
 
 from semfs.errors import IndexStateError
 from semfs.models import ChunkRecord, FileSnapshot, IndexConfig
+from semfs.verbose import emit_verbose, format_seconds
 
 SCHEMA_VERSION = "1"
-REQUIRED_TABLES = {"index_meta", "file_snapshots", "chunk_index"}
+_DUMMY_EMBEDDING: list[float] = [0.0]
+_CHROMA_BATCH_SIZE = 500
+
+
+@dataclass
+class IndexStore:
+    """Open ChromaDB store resources for one index."""
+
+    client: Any
+    chunks: Any
+    snapshots: Any
+    index_meta: Any
+    store_path: str
+    _closed: bool = field(default=False, init=False, repr=False)
+
+
+def _batched(items: list[Any], batch_size: int = _CHROMA_BATCH_SIZE) -> list[list[Any]]:
+    """Split a list into contiguous batches with a stable maximum size."""
+    return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
 
 
 def default_index_path(directory: str, index_name: str = "index0") -> Path:
     """Return the planned on-disk index location for a named index."""
-    return Path(directory) / ".semfs" / index_name / "index.db"
+    return Path(directory) / ".semfs" / index_name
 
 
-def connect_database(database_path: str | Path, load_vector_extension: bool = True) -> sqlite3.Connection:
-    """Open a SQLite connection and optionally load sqlite-vec."""
-    resolved_path = Path(database_path) if database_path != ":memory:" else None
-    if resolved_path is not None:
-        resolved_path.parent.mkdir(parents=True, exist_ok=True)
+def open_index_store(store_path: str | Path, *, in_memory: bool = False, verbose: bool = False) -> IndexStore:
+    """Open a ChromaDB store at the given path or in memory."""
+    import chromadb  # pyright: ignore[reportMissingTypeStubs]
 
-    connection = sqlite3.connect(database_path)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
+    open_started = perf_counter()
 
-    if load_vector_extension:
+    if in_memory:
         try:
-            connection.enable_load_extension(True)
-            sqlite_vec.load(connection)
-            connection.enable_load_extension(False)
-        except sqlite3.Error as exc:
+            client = chromadb.EphemeralClient()
+        except Exception as exc:
             message = (
-                f"Failed action `open_index` for {database_path}: sqlite-vec extension could not be loaded. "
-                "Next step: reinstall sqlite-vec and retry."
+                "Failed action `open_index` for ephemeral store: ChromaDB EphemeralClient could not be initialized. "
+                "Next step: install chromadb and retry."
             )
             raise IndexStateError(message) from exc
+        path_str = ":memory:"
+    else:
+        resolved = Path(store_path)
+        resolved.mkdir(parents=True, exist_ok=True)
+        try:
+            client = chromadb.PersistentClient(path=str(resolved))
+        except Exception as exc:
+            message = (
+                f"Failed action `open_index` for {store_path}: ChromaDB PersistentClient could not be initialized. "
+                "Next step: install chromadb and retry."
+            )
+            raise IndexStateError(message) from exc
+        path_str = str(resolved)
 
-    return connection
-
-
-def ensure_schema(connection: sqlite3.Connection, dimensions: int) -> None:
-    """Create the baseline metadata and vector tables for one index."""
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS index_meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-        """
+    chunks = client.get_or_create_collection(
+        name="chunks",
+        metadata={"hnsw:space": "cosine"},
     )
-    connection.execute(
-        """
-        CREATE TABLE IF NOT EXISTS file_snapshots (
-            file_path TEXT PRIMARY KEY,
-            size_bytes INTEGER NOT NULL,
-            modified_time TEXT NOT NULL,
-            content_digest TEXT NOT NULL,
-            chunk_count INTEGER NOT NULL,
-            last_indexed_at TEXT NOT NULL
-        )
-        """
+    snapshots = client.get_or_create_collection(name="snapshots")
+    index_meta = client.get_or_create_collection(name="index_meta")
+    emit_verbose(verbose, f"Opened Chroma store at {path_str} in {format_seconds(perf_counter() - open_started)}")
+    return IndexStore(
+        client=client,
+        chunks=chunks,
+        snapshots=snapshots,
+        index_meta=index_meta,
+        store_path=path_str,
     )
-    connection.execute(
-        f"""
-        CREATE VIRTUAL TABLE IF NOT EXISTS chunk_index USING vec0(
-            chunk_id INTEGER PRIMARY KEY,
-            embedding FLOAT[{dimensions}] DISTANCE_METRIC=cosine,
-            +file_path TEXT,
-            +start_line INTEGER,
-            +end_line INTEGER
-        )
-        """
+
+
+def reset_store(store: IndexStore) -> None:
+    """Delete and recreate all collections."""
+    store.client.delete_collection("chunks")
+    store.client.delete_collection("snapshots")
+    store.client.delete_collection("index_meta")
+    store.chunks = store.client.create_collection(
+        name="chunks",
+        metadata={"hnsw:space": "cosine"},
     )
-    connection.commit()
-
-
-def reset_schema(connection: sqlite3.Connection, dimensions: int) -> None:
-    """Drop and recreate the schema for a full rebuild."""
-    connection.execute("DROP TABLE IF EXISTS chunk_index")
-    connection.execute("DROP TABLE IF EXISTS file_snapshots")
-    connection.execute("DROP TABLE IF EXISTS index_meta")
-    connection.commit()
-    ensure_schema(connection, dimensions)
-
-
-def serialize_embedding(vector: list[float]) -> bytes:
-    """Serialize an embedding for sqlite-vec storage."""
-    return sqlite_vec.serialize_float32(vector)
+    store.snapshots = store.client.create_collection(name="snapshots")
+    store.index_meta = store.client.create_collection(name="index_meta")
 
 
 def chunking_fingerprint(config: IndexConfig) -> str:
@@ -106,16 +108,19 @@ def chunking_fingerprint(config: IndexConfig) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def write_index_metadata(connection: sqlite3.Connection, config: IndexConfig, embedding_dimensions: int) -> None:
+def write_index_metadata(store: IndexStore, config: IndexConfig, embedding_dimensions: int) -> None:
     """Persist the index metadata required to validate a reusable index."""
-    metadata = {
+    metadata_items = {
         "schema_version": SCHEMA_VERSION,
         "model_name": config.model,
         "embedding_dimensions": str(embedding_dimensions),
         "chunking_fingerprint": chunking_fingerprint(config),
     }
-    connection.executemany("INSERT OR REPLACE INTO index_meta(key, value) VALUES(?, ?)", metadata.items())
-    connection.commit()
+    store.index_meta.upsert(
+        ids=list(metadata_items.keys()),
+        embeddings=[_DUMMY_EMBEDDING for _ in metadata_items],
+        metadatas=[{"value": v} for v in metadata_items.values()],
+    )
 
 
 def metadata_value(metadata: dict[str, str], key: str, default: str = "") -> str:
@@ -123,23 +128,19 @@ def metadata_value(metadata: dict[str, str], key: str, default: str = "") -> str
     return metadata.get(key, default)
 
 
-def read_index_metadata(connection: sqlite3.Connection) -> dict[str, str]:
+def read_index_metadata(store: IndexStore) -> dict[str, str]:
     """Return persisted index metadata as a dictionary."""
-    rows = connection.execute("SELECT key, value FROM index_meta").fetchall()
-    return {str(row["key"]): str(row["value"]) for row in rows}
+    result = store.index_meta.get(include=["metadatas"])
+    if not result["ids"]:
+        return {}
+    return {item_id: str(meta["value"]) for item_id, meta in zip(result["ids"], result["metadatas"], strict=True)}
 
 
-def _storage_tables(connection: sqlite3.Connection) -> set[str]:
-    rows = connection.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'virtual table')").fetchall()
-    return {str(row[0]) for row in rows}
-
-
-def index_is_usable(connection: sqlite3.Connection, config: IndexConfig) -> bool:
+def index_is_usable(store: IndexStore, config: IndexConfig) -> bool:
     """Check whether an existing persisted index matches the requested configuration."""
-    if not REQUIRED_TABLES.issubset(_storage_tables(connection)):
+    metadata = read_index_metadata(store)
+    if not metadata:
         return False
-
-    metadata = read_index_metadata(connection)
     return (
         metadata.get("schema_version") == SCHEMA_VERSION
         and metadata.get("model_name") == config.model
@@ -184,146 +185,172 @@ def build_file_snapshot_from_contents(root: Path, file_path: Path, contents: str
     )
 
 
-def write_file_snapshots(connection: sqlite3.Connection, snapshots: list[FileSnapshot]) -> None:
-    """Persist file snapshots used for freshness and digest checks."""
-    connection.executemany(
-        """
-        INSERT OR REPLACE INTO file_snapshots(
-            file_path,
-            size_bytes,
-            modified_time,
-            content_digest,
-            chunk_count,
-            last_indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        [
-            (
-                snapshot.file_path,
-                snapshot.size_bytes,
-                snapshot.modified_time.isoformat(),
-                snapshot.content_digest,
-                snapshot.chunk_count,
-                snapshot.last_indexed_at.isoformat(),
-            )
-            for snapshot in snapshots
-        ],
+def write_file_snapshots(store: IndexStore, snapshots: list[FileSnapshot], *, verbose: bool = False) -> None:
+    """Persist file snapshots."""
+    if not snapshots:
+        return
+
+    write_started = perf_counter()
+    batch_count = 0
+    for batch in _batched(snapshots):
+        batch_count += 1
+        store.snapshots.upsert(
+            ids=[snapshot.file_path for snapshot in batch],
+            embeddings=[_DUMMY_EMBEDDING for _ in batch],
+            metadatas=[
+                {
+                    "size_bytes": snapshot.size_bytes,
+                    "modified_time": snapshot.modified_time.isoformat(),
+                    "content_digest": snapshot.content_digest,
+                    "chunk_count": snapshot.chunk_count,
+                    "last_indexed_at": snapshot.last_indexed_at.isoformat(),
+                }
+                for snapshot in batch
+            ],
+        )
+    emit_verbose(
+        verbose,
+        (
+            f"Upserted {len(snapshots)} file snapshots to Chroma in {batch_count} batches "
+            f"in {format_seconds(perf_counter() - write_started)}"
+        ),
     )
-    connection.commit()
 
 
 def replace_index_data(
-    connection: sqlite3.Connection, snapshots: list[FileSnapshot], chunk_records: list[ChunkRecord]
+    store: IndexStore,
+    snapshots: list[FileSnapshot],
+    chunk_records: list[ChunkRecord],
+    *,
+    verbose: bool = False,
 ) -> None:
-    """Replace stored snapshots and chunks in one transaction."""
-    connection.execute("BEGIN")
-    try:
-        connection.execute("DELETE FROM file_snapshots")
-        connection.execute("DELETE FROM chunk_index")
-        if snapshots:
-            connection.executemany(
-                """
-                INSERT INTO file_snapshots(
-                    file_path,
-                    size_bytes,
-                    modified_time,
-                    content_digest,
-                    chunk_count,
-                    last_indexed_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        snapshot.file_path,
-                        snapshot.size_bytes,
-                        snapshot.modified_time.isoformat(),
-                        snapshot.content_digest,
-                        snapshot.chunk_count,
-                        snapshot.last_indexed_at.isoformat(),
-                    )
-                    for snapshot in snapshots
-                ],
-            )
-        if chunk_records:
-            connection.executemany(
-                """
-                INSERT INTO chunk_index(
-                    chunk_id,
-                    embedding,
-                    file_path,
-                    start_line,
-                    end_line
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        int(record.chunk_id),
-                        serialize_embedding(record.embedding),
-                        record.file_path,
-                        record.start_line,
-                        record.end_line,
-                    )
-                    for record in chunk_records
-                ],
-            )
-    except sqlite3.Error:
-        connection.rollback()
-        raise
-    else:
-        connection.commit()
+    """Replace stored snapshots and chunks atomically."""
+    delete_started = perf_counter()
+    existing_chunks = store.chunks.get(include=[])
+    deleted_chunk_batches = 0
+    for batch in _batched(existing_chunks["ids"]):
+        deleted_chunk_batches += 1
+        store.chunks.delete(ids=batch)
+
+    existing_snapshots = store.snapshots.get(include=[])
+    deleted_snapshot_batches = 0
+    for batch in _batched(existing_snapshots["ids"]):
+        deleted_snapshot_batches += 1
+        store.snapshots.delete(ids=batch)
+    emit_verbose(
+        verbose,
+        (
+            f"Deleted existing index rows in {format_seconds(perf_counter() - delete_started)} "
+            f"({deleted_chunk_batches} chunk batches, {deleted_snapshot_batches} snapshot batches)"
+        ),
+    )
+
+    if snapshots:
+        write_file_snapshots(store, snapshots, verbose=verbose)
+
+    chunk_write_started = perf_counter()
+    chunk_batch_count = 0
+    for batch in _batched(chunk_records):
+        chunk_batch_count += 1
+        store.chunks.add(
+            ids=[record.chunk_id for record in batch],
+            embeddings=[record.embedding for record in batch],
+            metadatas=[
+                {
+                    "file_path": record.file_path,
+                    "start_line": record.start_line,
+                    "end_line": record.end_line,
+                }
+                for record in batch
+            ],
+        )
+    if chunk_records:
+        emit_verbose(
+            verbose,
+            (
+                f"Inserted {len(chunk_records)} chunk vectors to Chroma in {chunk_batch_count} batches "
+                f"in {format_seconds(perf_counter() - chunk_write_started)}"
+            ),
+        )
 
 
-def index_counts(connection: sqlite3.Connection) -> tuple[int, int]:
+def index_counts(store: IndexStore) -> tuple[int, int]:
     """Return the stored file and chunk counts for one index."""
-    file_count = int(connection.execute("SELECT COUNT(*) FROM file_snapshots").fetchone()[0])
-    chunk_count = int(connection.execute("SELECT COUNT(*) FROM chunk_index").fetchone()[0])
+    file_count = store.snapshots.count()
+    chunk_count = store.chunks.count()
     return file_count, chunk_count
 
 
-def read_file_snapshot(connection: sqlite3.Connection, file_path: str) -> FileSnapshot | None:
+def read_file_snapshot(store: IndexStore, file_path: str) -> FileSnapshot | None:
     """Return one stored file snapshot when present."""
-    row = connection.execute(
-        """
-        SELECT file_path, size_bytes, modified_time, content_digest, chunk_count, last_indexed_at
-        FROM file_snapshots
-        WHERE file_path = ?
-        """,
-        [file_path],
-    ).fetchone()
-    if row is None:
+    result = store.snapshots.get(ids=[file_path], include=["metadatas"])
+    if not result["ids"]:
         return None
-
+    meta = result["metadatas"][0]
     return FileSnapshot(
-        file_path=str(row["file_path"]),
-        size_bytes=int(row["size_bytes"]),
-        modified_time=datetime.fromisoformat(str(row["modified_time"])),
-        content_digest=str(row["content_digest"]),
-        chunk_count=int(row["chunk_count"]),
-        last_indexed_at=datetime.fromisoformat(str(row["last_indexed_at"])),
+        file_path=file_path,
+        size_bytes=int(meta["size_bytes"]),
+        modified_time=datetime.fromisoformat(str(meta["modified_time"])),
+        content_digest=str(meta["content_digest"]),
+        chunk_count=int(meta["chunk_count"]),
+        last_indexed_at=datetime.fromisoformat(str(meta["last_indexed_at"])),
     )
 
 
 def fetch_chunk_candidates(
-    connection: sqlite3.Connection, query_embedding: bytes, candidate_k: int
-) -> list[sqlite3.Row]:
-    """Return deterministic chunk candidates from sqlite-vec KNN search."""
-    rows = connection.execute(
-        """
-        SELECT chunk_id, file_path, start_line, end_line, distance
-        FROM chunk_index
-        WHERE embedding MATCH ?
-          AND k = ?
-        ORDER BY distance
-        """,
-        [query_embedding, candidate_k],
-    ).fetchall()
-    return sorted(rows, key=lambda row: (float(row["distance"]), str(row["file_path"]), int(row["start_line"])))
+    store: IndexStore,
+    query_embedding: list[float],
+    candidate_k: int,
+    *,
+    verbose: bool = False,
+) -> list[dict[str, Any]]:
+    """Return deterministic chunk candidates from ChromaDB KNN search."""
+    total_chunks = store.chunks.count()
+    if total_chunks == 0:
+        return []
+
+    k = min(candidate_k, total_chunks)
+    query_started = perf_counter()
+    results = store.chunks.query(
+        query_embeddings=[query_embedding],
+        n_results=k,
+        include=["distances", "metadatas"],
+    )
+
+    rows: list[dict[str, Any]] = [
+        {
+            "chunk_id": chunk_id,
+            "file_path": meta["file_path"],
+            "start_line": meta["start_line"],
+            "end_line": meta["end_line"],
+            "distance": distance,
+        }
+        for chunk_id, meta, distance in zip(
+            results["ids"][0],
+            results["metadatas"][0],
+            results["distances"][0],
+            strict=True,
+        )
+    ]
+    ranked = sorted(rows, key=lambda row: (float(row["distance"]), str(row["file_path"]), int(row["start_line"])))
+    emit_verbose(
+        verbose,
+        (
+            f"Chroma query searched {total_chunks} chunks and returned {len(ranked)} rows in "
+            f"{format_seconds(perf_counter() - query_started)}"
+        ),
+    )
+    return ranked
 
 
-def detect_snapshot_drift(connection: sqlite3.Connection, root: Path, files: list[Path]) -> bool:
+def detect_snapshot_drift(store: IndexStore, root: Path, files: list[Path], *, verbose: bool = False) -> bool:
     """Return true when the current file set differs from stored snapshot metadata."""
-    stored_rows = connection.execute("SELECT file_path, size_bytes, modified_time FROM file_snapshots").fetchall()
-    stored = {str(row["file_path"]): (int(row["size_bytes"]), str(row["modified_time"])) for row in stored_rows}
+    drift_started = perf_counter()
+    result = store.snapshots.get(include=["metadatas"])
+    stored = {
+        item_id: (int(meta["size_bytes"]), str(meta["modified_time"]))
+        for item_id, meta in zip(result["ids"], result["metadatas"], strict=True)
+    }
 
     current: dict[str, tuple[int, str]] = {}
     for file_path in files:
@@ -331,10 +358,20 @@ def detect_snapshot_drift(connection: sqlite3.Connection, root: Path, files: lis
         timestamp = datetime.fromtimestamp(stat.st_mtime_ns / 1_000_000_000, UTC).isoformat()
         current[str(file_path.relative_to(root))] = (stat.st_size, timestamp)
 
-    return stored != current
+    has_drift = stored != current
+    emit_verbose(
+        verbose,
+        (
+            f"Snapshot drift check across {len(files)} files completed in "
+            f"{format_seconds(perf_counter() - drift_started)}; "
+            f"drift={has_drift}"
+        ),
+    )
+    return has_drift
 
 
-def sqlite_vec_version(connection: sqlite3.Connection) -> str:
-    """Return the loaded sqlite-vec version string."""
-    row = connection.execute("SELECT vec_version()").fetchone()
-    return str(row[0])
+def chromadb_version() -> str:
+    """Return the installed chromadb version string."""
+    import chromadb  # pyright: ignore[reportMissingTypeStubs]
+
+    return str(chromadb.__version__)

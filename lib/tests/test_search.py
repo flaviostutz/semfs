@@ -7,12 +7,11 @@ from semfs.config import parse_index_config
 from semfs.errors import FileProcessingError
 from semfs.storage import (
     build_file_snapshot,
+    chromadb_version,
     chunking_fingerprint,
-    connect_database,
     detect_snapshot_drift,
-    ensure_schema,
     index_is_usable,
-    sqlite_vec_version,
+    open_index_store,
     write_file_snapshots,
     write_index_metadata,
 )
@@ -28,15 +27,14 @@ def _config_payload() -> dict[str, object]:
     }
 
 
-def test_sqlite_vec_connection_and_schema(tmp_path: Path) -> None:
-    database_path = tmp_path / "index.db"
-    connection = connect_database(database_path)
+def test_chromadb_connection_and_schema(tmp_path: Path) -> None:
+    store_path = tmp_path / "test_store"
+    store = open_index_store(store_path)
 
-    try:
-        ensure_schema(connection, dimensions=8)
-        assert sqlite_vec_version(connection).startswith("v")
-    finally:
-        connection.close()
+    assert chromadb_version() != ""
+    assert store.chunks is not None
+    assert store.snapshots is not None
+    assert store.index_meta is not None
 
 
 def test_index_metadata_and_snapshot_drift(tmp_path: Path) -> None:
@@ -45,24 +43,20 @@ def test_index_metadata_and_snapshot_drift(tmp_path: Path) -> None:
     file_path = root / "a.md"
     file_path.write_text("# Title\nbody\n", encoding="utf-8")
 
-    connection = connect_database(tmp_path / "index.db")
+    store = open_index_store(tmp_path / "store")
     config = parse_index_config(_config_payload())
 
-    try:
-        ensure_schema(connection, dimensions=8)
-        write_index_metadata(connection, config, embedding_dimensions=8)
+    write_index_metadata(store, config, embedding_dimensions=8)
 
-        snapshot = build_file_snapshot(root, file_path, chunk_count=1)
-        write_file_snapshots(connection, [snapshot])
+    snapshot = build_file_snapshot(root, file_path, chunk_count=1)
+    write_file_snapshots(store, [snapshot])
 
-        assert index_is_usable(connection, config)
-        assert chunking_fingerprint(config)
-        assert not detect_snapshot_drift(connection, root, [file_path])
+    assert index_is_usable(store, config)
+    assert chunking_fingerprint(config)
+    assert not detect_snapshot_drift(store, root, [file_path])
 
-        file_path.write_text("# Title\nchanged\n", encoding="utf-8")
-        assert detect_snapshot_drift(connection, root, [file_path])
-    finally:
-        connection.close()
+    file_path.write_text("# Title\nchanged\n", encoding="utf-8")
+    assert detect_snapshot_drift(store, root, [file_path])
 
 
 def test_chunks_query_merges_contiguous_ranges(sample_docs: Path, fake_model: object) -> None:

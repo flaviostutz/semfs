@@ -11,6 +11,13 @@ from semfs.errors import ConfigError
 from semfs.models import IndexConfig, QueryRequest
 
 DEFAULT_CONFIG_FILE = ".semfsrc"
+DEFAULT_INDEX_NAME = "index0"
+DEFAULT_INDEX_FILTER = "**/*"
+DEFAULT_INDEX_MODE = "auto"
+DEFAULT_CHUNK_SIZE = 500
+DEFAULT_CHUNK_OVERLAP = 250
+DEFAULT_CHUNK_EDGES = "auto"
+DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def resolve_config_path(config_path: Path | None = None, cwd: Path | None = None) -> Path:
@@ -18,6 +25,23 @@ def resolve_config_path(config_path: Path | None = None, cwd: Path | None = None
     if config_path is not None:
         return config_path
     return (cwd or Path.cwd()) / DEFAULT_CONFIG_FILE
+
+
+def default_index_config() -> IndexConfig:
+    """Return the CLI default index configuration used when no config file is present."""
+    return IndexConfig.model_validate(
+        {
+            "name": DEFAULT_INDEX_NAME,
+            "filter": DEFAULT_INDEX_FILTER,
+            "mode": DEFAULT_INDEX_MODE,
+            "chunking": {
+                "size": DEFAULT_CHUNK_SIZE,
+                "overlap": DEFAULT_CHUNK_OVERLAP,
+                "edges": DEFAULT_CHUNK_EDGES,
+            },
+            "model": DEFAULT_MODEL_NAME,
+        }
+    )
 
 
 def parse_index_config(config: IndexConfig | Mapping[str, Any] | None) -> IndexConfig:

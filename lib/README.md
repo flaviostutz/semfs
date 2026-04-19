@@ -4,7 +4,25 @@ Semantic file queries for local folders via a Python library and CLI.
 
 ## Getting Started
 
-Create a UTF-8 JSON `.semfsrc` in the working directory:
+Run semfs immediately with the built-in default config, or add a UTF-8 JSON `.semfsrc` in the working directory to override it.
+
+Default CLI config:
+
+```json
+{
+  "name": "index0",
+  "filter": "**/*",
+  "mode": "auto",
+  "chunking": {
+    "size": 500,
+    "overlap": 250,
+    "edges": "auto"
+  },
+  "model": "sentence-transformers/all-MiniLM-L6-v2"
+}
+```
+
+Optional `.semfsrc` override:
 
 ```json
 {
@@ -20,12 +38,12 @@ Create a UTF-8 JSON `.semfsrc` in the working directory:
 }
 ```
 
-From a source checkout, install the shared environment and run the CLI through `lib/`:
+From a source checkout, prepare the shared environment once and run the installed CLI from the shared virtual environment:
 
 ```sh
-make install
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs index docs
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs chunks docs "what is x?" --top 5
+make setup
+./.venv/bin/semfs index docs
+./.venv/bin/semfs chunks docs "what is x?" --top 5
 ```
 
 The configured embedding model must be available locally before offline indexing or querying.
@@ -54,32 +72,34 @@ Lifecycle modes:
 Show the installed version:
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs --version
+semfs --version
 ```
 
 Build or refresh an index:
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs index docs
+semfs index docs
 ```
 
 Return chunk matches with excerpt contents:
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs chunks docs "what is x?" --top 5 --contents
+semfs chunks docs "what is x?" --top 5 --contents
 ```
 
 Return deduplicated matching files:
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs files docs "what is x?" --top 5
+semfs files docs "what is x?" --top 5
 ```
 
 Use an explicit config file path:
 
 ```sh
-UV_PROJECT_ENVIRONMENT="$PWD/.venv" UV_CACHE_DIR="$PWD/.cache/uv" uv run --project lib semfs index docs --config .semfsrc
+semfs index docs --config .semfsrc
 ```
+
+When `.semfsrc` is absent, the CLI falls back to the default config shown above. When `--config` is provided, that file must exist and contain valid JSON.
 
 Successful `index` runs print a start message and a completion message with indexed file and chunk counts. If the configured model is not available locally, semfs fails with an actionable error instead of falling back to online behavior.
 
@@ -128,6 +148,7 @@ If excerpt contents are requested and any selected file no longer matches the in
 ## Development
 
 ```sh
+make setup
 make build
 make lint
 make test
