@@ -1,0 +1,11 @@
+Camera privacy mode instructions
+
+HelioHome indoor cameras must default to privacy mode while installers are still in the house.
+
+Configuration steps:
+1. Pair the camera after the gateway hub is healthy.
+2. Set Home mode to lens covered.
+3. Set Away mode to motion capture.
+4. Confirm that the resident can toggle privacy from the mobile app.
+
+If the camera does not sync privacy changes, inspect the Wi-Fi RSSI and reduce overlap with nearby baby monitors.

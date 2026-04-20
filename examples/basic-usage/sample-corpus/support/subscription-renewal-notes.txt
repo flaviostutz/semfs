@@ -1,0 +1,10 @@
+Subscription renewal notes
+
+The startup sells monitoring subscriptions tied to the home management electronics package.
+
+Renewal reminders should mention:
+- Active devices in the property
+- Last successful health check date
+- Any pending battery replacements
+
+If a customer has an offline gateway at renewal time, create a support task before charging the next annual term.

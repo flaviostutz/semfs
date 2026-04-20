@@ -18,7 +18,11 @@ Default CLI config:
     "overlap": 250,
     "edges": "auto"
   },
-  "model": "sentence-transformers/all-MiniLM-L6-v2"
+  "model": {
+    "name": "all-MiniLM-L6-v2",
+    "autoDownload": false,
+    "localPath": "./cache/all-MiniLM-L6-v2"
+  }
 }
 ```
 
@@ -34,7 +38,11 @@ Optional `.semfsrc` override:
     "overlap": 250,
     "edges": "auto"
   },
-  "model": "sentence-transformers/all-MiniLM-L6-v2"
+  "model": {
+    "name": "all-MiniLM-L6-v2",
+    "autoDownload": false,
+    "localPath": "./cache/all-MiniLM-L6-v2"
+  }
 }
 ```
 
@@ -42,11 +50,12 @@ From a source checkout, prepare the shared environment once and run the installe
 
 ```sh
 make setup
+make -C examples download-model
 ./.venv/bin/semfs index docs
 ./.venv/bin/semfs chunks docs "what is x?" --top 5
 ```
 
-The configured embedding model must be available locally before offline indexing or querying.
+semfs uses sentence-transformers directly. Configure model loading through `.semfsrc` or the config object you pass to the library. When `model.autoDownload` is `false`, semfs loads the model from `model.localPath` only. When `model.autoDownload` is `true`, semfs will try the local path first and otherwise let sentence-transformers download and cache the model.
 
 ## Using semfs
 
@@ -101,7 +110,34 @@ semfs index docs --config .semfsrc
 
 When `.semfsrc` is absent, the CLI falls back to the default config shown above. When `--config` is provided, that file must exist and contain valid JSON.
 
-Successful `index` runs print a start message and a completion message with indexed file and chunk counts. If the configured model is not available locally, semfs fails with an actionable error instead of falling back to online behavior.
+Successful `index` runs print a start message and a completion message with indexed file and chunk counts.
+
+### Sample directory walkthrough
+
+The `examples/basic-usage/sample-corpus/` directory contains a ready-made corpus you can use to try the CLI immediately after setup.
+
+```sh
+# from the repository root, after running `make setup` and downloading the model
+make -C examples download-model
+
+# index the sample corpus (uses default config, model at ./cache/all-MiniLM-L6-v2)
+cd examples/basic-usage
+mise exec -- uv run --project . semfs index sample-corpus
+
+# search for relevant chunks and print their file locations and text
+mise exec -- uv run --project . semfs chunks sample-corpus \
+  'how do installers recover an offline zigbee hub?' \
+  --top 5 --contents
+# expected: devices/zigbee-hub-recovery.txt[1:6] in results
+
+# search for the most relevant files
+mise exec -- uv run --project . semfs files sample-corpus \
+  'steps to prepare a technician visit for thermostat or lock issues' \
+  --top 5
+# expected: support/field-visit-prep.md and devices/thermostat-onboarding.md in results
+```
+
+The sample corpus covers three top-level topics (`devices/`, `operations/`, `support/`) and is the same corpus used by `make test-cli` in `examples/basic-usage`.
 
 ## Library Examples
 
@@ -115,7 +151,11 @@ config = {
     "filter": "**/*.md",
     "mode": "auto",
     "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-    "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "model": {
+    "name": "all-MiniLM-L6-v2",
+    "autoDownload": False,
+    "localPath": "./cache/all-MiniLM-L6-v2",
+  },
 }
 
 state = semfs.index("docs", config)
@@ -132,7 +172,11 @@ config = {
     "filter": "**/*.md",
     "mode": "auto",
     "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-    "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "model": {
+    "name": "all-MiniLM-L6-v2",
+    "autoDownload": False,
+    "localPath": "./cache/all-MiniLM-L6-v2",
+  },
 }
 query = {"text": "what is x?", "max_results": 5}
 
@@ -145,6 +189,8 @@ print(files)
 
 If excerpt contents are requested and any selected file no longer matches the indexed snapshot or cannot be read, the whole query fails with an actionable error.
 
+If the configured local model directory is missing and `model.autoDownload` is `false`, indexing and query operations fail with an actionable local-model error.
+
 ## Development
 
 ```sh
@@ -154,4 +200,4 @@ make lint
 make test
 ```
 
-Consumer examples under `examples/` are verified from the wheel built into `lib/dist/`, not by importing from `lib/src/` directly.
+Consumer examples under `examples/` are verified against an editable install of the library source.

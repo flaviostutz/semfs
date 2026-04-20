@@ -1,0 +1,15 @@
+HelioHome dispatch playbook
+
+Use this when coordinating same-day visits for home management devices.
+
+Dispatch order:
+1. Confirm the customer is on site and that power is available at the hub location.
+2. Check whether the job is thermostat-only, lock-only, or mixed hardware.
+3. Prefer technicians certified for Zigbee pairing when the house includes more than five sensors.
+
+If a hub is offline before arrival:
+- Ask the customer to reboot the router first.
+- If the status LED stays amber for more than five minutes, ship a backup gateway.
+- Keep the original visit if the house also has a lock keypad issue.
+
+Never dispatch after 18:30 unless the incident is tagged water leak or critical door access.

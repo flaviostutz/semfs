@@ -14,7 +14,9 @@ Represents the caller-supplied indexing and query settings for one named index.
 | `chunking.size` | integer | Yes | Greater than 0 |
 | `chunking.overlap` | integer | Yes | Greater than or equal to 0 and strictly smaller than `size` |
 | `chunking.edges` | enum | Yes | `auto` applies markdown-aware chunking to markdown files and fixed chunking otherwise; `fixed` always uses fixed chunking |
-| `model` | string | Yes | Installed local embedding model identifier |
+| `model.name` | string | Yes | Embedding model name, default `all-MiniLM-L6-v2` |
+| `model.autoDownload` | boolean | Yes | Default `false`; when `false`, runtime loads only from `localPath` |
+| `model.localPath` | string | Yes | Extracted local model directory used for local-first loading |
 
 Supported indexed inputs are UTF-8-readable text files selected by the filter. Binary files, unreadable files, and other unsupported non-text inputs are skipped.
 

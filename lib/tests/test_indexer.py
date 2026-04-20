@@ -4,7 +4,7 @@ import pytest
 
 import semfs
 from semfs.errors import FileProcessingError
-from semfs.indexer import embedding_dimensions, index, load_embedding_model
+from semfs.indexer import index
 from semfs.models import IndexStatus
 
 
@@ -14,7 +14,6 @@ def _config_payload() -> dict[str, object]:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -28,7 +27,8 @@ def test_index_returns_initialized_state(tmp_path: Path, fake_model: object) -> 
     assert state.status is IndexStatus.READY
     assert state.index_name == "index0"
     assert state.database_path.endswith(".semfs/index0")
-    assert state.schema_version == "1"
+    assert state.schema_version == "3"
+    assert state.model_name == "sentence-transformers/all-MiniLM-L6-v2"
     assert state.embedding_dimensions == 3
     assert state.indexed_files == 1
     assert state.indexed_chunks >= 1
@@ -39,28 +39,6 @@ def test_missing_directory_raises() -> None:
 
     with pytest.raises(FileProcessingError):
         index(str(missing_directory), _config_payload())
-
-
-def test_embedding_model_loader_is_cached(monkeypatch: pytest.MonkeyPatch) -> None:
-    load_embedding_model.cache_clear()
-    calls: list[str] = []
-
-    class FakeModel:
-        def __init__(self, model_name: str, *, local_files_only: bool = False) -> None:
-            calls.append(model_name)
-            assert local_files_only is True
-
-        def get_sentence_embedding_dimension(self) -> int:
-            return 384
-
-    monkeypatch.setattr("sentence_transformers.SentenceTransformer", FakeModel)
-
-    first = load_embedding_model("fake-model")
-    second = load_embedding_model("fake-model")
-
-    assert first is second
-    assert calls == ["fake-model"]
-    assert embedding_dimensions("fake-model") == 384
 
 
 def test_stale_mode_reuses_existing_index_when_files_change(sample_docs: Path, fake_model: object) -> None:

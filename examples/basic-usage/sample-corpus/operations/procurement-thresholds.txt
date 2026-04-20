@@ -1,0 +1,13 @@
+Procurement thresholds for launch quarter
+
+Order more stock when any of the following conditions are true:
+- Smart locks on hand are below 40 units.
+- Thermostat controller kits are below 25 units.
+- Leak sensor battery packs are below 60 units.
+
+Preferred vendors:
+- Northline Components for lock motors and keypad membranes.
+- HomeGrid Labs for gateway hubs.
+- SensorSpring for low-power moisture sensors.
+
+If a vendor lead time exceeds 14 days, notify finance and reduce the next city launch batch size.

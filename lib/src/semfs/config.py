@@ -17,7 +17,49 @@ DEFAULT_INDEX_MODE = "auto"
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 250
 DEFAULT_CHUNK_EDGES = "auto"
-DEFAULT_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_MODEL_NAME = "all-MiniLM-L6-v2"
+DEFAULT_MODEL_OFFLINE_ONLY = False
+
+
+def _default_model_payload() -> dict[str, Any]:
+    """Return the default model config."""
+    return {
+        "name": DEFAULT_MODEL_NAME,
+        "offlineOnly": DEFAULT_MODEL_OFFLINE_ONLY,
+    }
+
+
+def _merge_index_payload_with_defaults(raw_config: Mapping[str, Any]) -> dict[str, Any]:
+    """Apply config defaults, including the nested model group, before validation."""
+    payload: dict[str, Any] = {
+        "name": raw_config.get("name", DEFAULT_INDEX_NAME),
+        "filter": raw_config.get("filter", DEFAULT_INDEX_FILTER),
+        "mode": raw_config.get("mode", DEFAULT_INDEX_MODE),
+        "chunking": {
+            "size": DEFAULT_CHUNK_SIZE,
+            "overlap": DEFAULT_CHUNK_OVERLAP,
+            "edges": DEFAULT_CHUNK_EDGES,
+        },
+        "model": _default_model_payload(),
+    }
+
+    chunking = raw_config.get("chunking")
+    if isinstance(chunking, Mapping):
+        payload["chunking"].update(chunking)
+    elif chunking is not None:
+        payload["chunking"] = chunking
+
+    model = raw_config.get("model")
+    if isinstance(model, Mapping):
+        payload["model"].update(model)
+    elif model is not None:
+        payload["model"] = model
+
+    for key in ("name", "filter", "mode"):
+        if key in raw_config:
+            payload[key] = raw_config[key]
+
+    return payload
 
 
 def resolve_config_path(config_path: Path | None = None, cwd: Path | None = None) -> Path:
@@ -29,19 +71,7 @@ def resolve_config_path(config_path: Path | None = None, cwd: Path | None = None
 
 def default_index_config() -> IndexConfig:
     """Return the CLI default index configuration used when no config file is present."""
-    return IndexConfig.model_validate(
-        {
-            "name": DEFAULT_INDEX_NAME,
-            "filter": DEFAULT_INDEX_FILTER,
-            "mode": DEFAULT_INDEX_MODE,
-            "chunking": {
-                "size": DEFAULT_CHUNK_SIZE,
-                "overlap": DEFAULT_CHUNK_OVERLAP,
-                "edges": DEFAULT_CHUNK_EDGES,
-            },
-            "model": DEFAULT_MODEL_NAME,
-        }
-    )
+    return IndexConfig.model_validate(_merge_index_payload_with_defaults({}))
 
 
 def parse_index_config(config: IndexConfig | Mapping[str, Any] | None) -> IndexConfig:
@@ -54,7 +84,8 @@ def parse_index_config(config: IndexConfig | Mapping[str, Any] | None) -> IndexC
         )
         raise ConfigError(message)
     try:
-        return IndexConfig.model_validate(config)
+        payload = _merge_index_payload_with_defaults(config) if isinstance(config, Mapping) else config
+        return IndexConfig.model_validate(payload)
     except ValidationError as exc:
         message = (
             "Failed action `load_config`: invalid index configuration. "
@@ -108,4 +139,11 @@ def load_config(
         )
         raise ConfigError(message) from exc
 
-    return parse_index_config(raw_config)
+    if not isinstance(raw_config, Mapping):
+        message = (
+            f"Failed action `load_config` for {candidate}: config file must contain a JSON object. "
+            "Next step: replace the top-level JSON value with an object and retry."
+        )
+        raise ConfigError(message)
+
+    return parse_index_config(_merge_index_payload_with_defaults(raw_config))

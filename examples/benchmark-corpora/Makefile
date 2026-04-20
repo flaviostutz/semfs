@@ -1,20 +1,38 @@
 SHELL := /bin/bash
 MISE := mise exec --
-ROOT_DIR := $(abspath ../..)
-WHEEL_GLOB := $(ROOT_DIR)/lib/dist/*.whl
-export UV_PROJECT_ENVIRONMENT := $(ROOT_DIR)/.venv
-export UV_CACHE_DIR := $(ROOT_DIR)/.cache/uv
+
+MODEL_DIR := $(abspath ./.cache/all-MiniLM-L6-v2)
+MODEL_BASE_URL := https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main
+MODEL_FILES := \
+	1_Pooling/config.json \
+	config.json \
+	config_sentence_transformers.json \
+	modules.json \
+	model.safetensors \
+	sentence_bert_config.json \
+	special_tokens_map.json \
+	tokenizer.json \
+	tokenizer_config.json \
+	vocab.txt
 
 .PHONY: all run clean
 
 all: run
 
-run:
+download-model:
+	@echo ">>> ./examples/basic-usage: download-model"
+	@for file in $(MODEL_FILES); do \
+		target="$(MODEL_DIR)/$$file"; \
+		mkdir -p "$$(dirname "$$target")"; \
+		if [ ! -f "$$target" ]; then \
+			echo ">>> downloading $$file"; \
+			curl -L --fail "$(MODEL_BASE_URL)/$$file?download=true" -o "$$target"; \
+		fi; \
+	done
+
+run: download-model
 	@echo ">>> ./examples/benchmark-corpora: run"
-	@ls $(WHEEL_GLOB) >/dev/null 2>&1 || { echo "Build artifacts missing. Run 'make build' first."; exit 1; }
-	$(MISE) uv sync --project . --frozen
-	$(MISE) uv pip install --python "$(UV_PROJECT_ENVIRONMENT)/bin/python" --force-reinstall $(WHEEL_GLOB)
-	HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 $(MISE) uv run --project . python main.py
+	$(MISE) uv run --frozen python main.py
 
 clean:
 	@echo ">>> ./examples/benchmark-corpora: clean"

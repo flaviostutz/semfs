@@ -1,0 +1,13 @@
+Zigbee hub recovery guide
+
+Use this when a gateway hub or Zigbee coordinator appears offline.
+
+Recovery sequence:
+1. Confirm the power adapter is the original 12V unit.
+2. Check for an amber LED. Amber means the hub booted but did not rejoin the network.
+3. Reboot the home router, then power-cycle the hub.
+4. Wait five minutes for the mesh to reform.
+5. Re-run network repair from the field app.
+
+If more than three devices remain unreachable, move the hub away from large televisions, sound bars, or metal shelving.
+If the LED stays amber after two power cycles, swap in the backup gateway and restore from cloud config.

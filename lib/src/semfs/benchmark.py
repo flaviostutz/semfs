@@ -8,7 +8,8 @@ from time import perf_counter
 from typing import Any
 
 import semfs
-from semfs.models import BenchmarkRun, IndexConfig
+from semfs.config import parse_index_config
+from semfs.models import BenchmarkRun, IndexConfig, IndexMode
 from semfs.synthetic_data import create_dataset, dataset_spec
 
 
@@ -27,13 +28,13 @@ def run_benchmark(
     verbose: bool = False,
 ) -> BenchmarkRun:
     """Run one benchmark scenario and persist its JSON artifact."""
-    parsed_config = IndexConfig.model_validate(config)
+    parsed_config = parse_index_config(config)
     benchmark_query = {"text": query_text, "max_results": 10}
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    index_config = parsed_config.model_copy(update={"mode": "refresh"})
-    query_config = parsed_config.model_copy(update={"mode": "stale"})
+    index_config = parsed_config.model_copy(update={"mode": IndexMode.REFRESH})
+    query_config = parsed_config.model_copy(update={"mode": IndexMode.STALE})
 
     index_started = perf_counter()
     semfs.index(str(dataset_root), index_config, verbose=verbose)

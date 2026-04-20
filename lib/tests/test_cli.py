@@ -12,7 +12,6 @@ def _config_payload(mode: str = "auto") -> dict[str, object]:
         "filter": "**/*.md",
         "mode": mode,
         "chunking": {"size": 80, "overlap": 20, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -41,6 +40,25 @@ def test_index_cli_uses_default_config_when_semfsrc_is_missing(sample_docs: Path
     assert result.exit_code == 0
     assert "Starting index 'index0'" in result.output
     assert ".semfs/index0" in result.output
+
+
+def test_index_cli_verbose_logs_announce_work_before_reporting_timing(sample_docs: Path, fake_model: object) -> None:
+    _ = fake_model
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["index", str(sample_docs), "--verbose"])
+
+    assert result.exit_code == 0
+    lines = result.output.splitlines()
+    prepare_before = next(index for index, line in enumerate(lines) if "Preparing index 'index0'" in line)
+    prepare_after = next(index for index, line in enumerate(lines) if "Prepared index 'index0'" in line)
+    open_before = next(index for index, line in enumerate(lines) if "Opening Chroma store at" in line)
+    open_after = next(index for index, line in enumerate(lines) if "Opened Chroma store at" in line)
+
+    assert prepare_before < prepare_after
+    assert open_before < open_after
+    assert " in " in lines[prepare_after]
+    assert " in " in lines[open_after]
 
 
 def test_files_cli_uses_default_config_when_semfsrc_is_missing(sample_docs: Path, fake_model: object) -> None:

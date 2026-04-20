@@ -1,10 +1,9 @@
-"""Indexing entry point and embedding-model loading utilities for semfs."""
+"""Indexing entry point for semfs."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from functools import cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import perf_counter
@@ -12,7 +11,7 @@ from typing import Any
 
 from semfs.chunking import chunk_text
 from semfs.config import parse_index_config
-from semfs.errors import FileProcessingError, ModelUnavailableError
+from semfs.errors import FileProcessingError
 from semfs.models import ChunkRecord, FileSnapshot, IndexConfig, IndexMode, IndexState, IndexStatus
 from semfs.storage import (
     SCHEMA_VERSION,
@@ -21,6 +20,7 @@ from semfs.storage import (
     chunking_fingerprint,
     default_index_path,
     detect_snapshot_drift,
+    embed_texts,
     index_counts,
     index_is_usable,
     metadata_value,
@@ -28,6 +28,7 @@ from semfs.storage import (
     read_index_metadata,
     replace_index_data,
     reset_store,
+    resolve_model_name,
     write_index_metadata,
 )
 from semfs.verbose import emit_verbose, format_seconds
@@ -42,41 +43,6 @@ class PreparedIndex:
     store: IndexStore
     state: IndexState
     cleanup: Any | None = None
-
-
-@cache
-def load_embedding_model(model_name: str) -> Any:
-    """Load and cache one sentence-transformers model per configured model name."""
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError as exc:
-        message = (
-            f"Failed action `load_model` for model {model_name}: sentence-transformers is unavailable. "
-            "Next step: install dependencies and retry."
-        )
-        raise ModelUnavailableError(message) from exc
-
-    try:
-        return SentenceTransformer(model_name, local_files_only=True)
-    except (OSError, RuntimeError, ValueError) as exc:
-        message = (
-            f"Failed action `load_model` for model {model_name}: the embedding model could not be loaded. "
-            "Next step: install or download the model locally and retry."
-        )
-        raise ModelUnavailableError(message) from exc
-
-
-def embedding_dimensions(model_name: str) -> int:
-    """Return the embedding dimension reported by the configured model."""
-    model = load_embedding_model(model_name)
-    dimensions = model.get_sentence_embedding_dimension()
-    if not isinstance(dimensions, int) or dimensions <= 0:
-        message = (
-            f"Failed action `load_model` for model {model_name}: invalid embedding dimensions were reported. "
-            "Next step: verify the model and retry."
-        )
-        raise ModelUnavailableError(message)
-    return dimensions
 
 
 def _validate_directory(directory: str) -> Path:
@@ -115,32 +81,21 @@ def _load_indexable_sources(root: Path, pattern: str) -> list[tuple[Path, str]]:
 
 def _build_chunk_records(
     root: Path, config: IndexConfig, *, verbose: bool = False
-) -> tuple[int, list[ChunkRecord], list[FileSnapshot]]:
-    model_load_started = perf_counter()
-    model = load_embedding_model(config.model)
-    emit_verbose(
-        verbose,
-        f"Loaded embedding model {config.model} in {format_seconds(perf_counter() - model_load_started)}",
-    )
-
-    dimensions_started = perf_counter()
-    dimensions = embedding_dimensions(config.model)
-    emit_verbose(
-        verbose,
-        f"Resolved embedding dimensions ({dimensions}) in {format_seconds(perf_counter() - dimensions_started)}",
-    )
-
+) -> tuple[list[ChunkRecord], list[FileSnapshot]]:
     tree_walk_started = perf_counter()
+    emit_verbose(verbose, f"Loading source files matching {config.filter}")
     sources = _load_indexable_sources(root, config.filter)
     emit_verbose(
         verbose,
-        f"Walked source tree and loaded {len(sources)} files in {format_seconds(perf_counter() - tree_walk_started)}",
+        (
+            f"Loaded {len(sources)} source files matching {config.filter} in "
+            f"{format_seconds(perf_counter() - tree_walk_started)}"
+        ),
     )
 
     next_chunk_id = 1
     chunk_records: list[ChunkRecord] = []
     snapshots: list[FileSnapshot] = []
-    total_embedding_seconds = 0.0
 
     for file_path, contents in sources:
         spans = chunk_text(contents, file_path.relative_to(root), config.chunking)
@@ -148,30 +103,24 @@ def _build_chunk_records(
         if not spans:
             continue
 
-        embedding_started = perf_counter()
-        embeddings = model.encode([span.text for span in spans], normalize_embeddings=True)
-        total_embedding_seconds += perf_counter() - embedding_started
-        for span, embedding in zip(spans, embeddings, strict=True):
+        for span in spans:
             chunk_records.append(
                 ChunkRecord(
                     chunk_id=str(next_chunk_id),
                     file_path=str(file_path.relative_to(root)),
                     start_line=span.start_line,
                     end_line=span.end_line,
-                    embedding=[float(value) for value in embedding],
+                    document=span.text,
                 )
             )
             next_chunk_id += 1
 
     emit_verbose(
         verbose,
-        (
-            f"Prepared {len(chunk_records)} chunks from {len(snapshots)} files; "
-            f"embedding generation took {format_seconds(total_embedding_seconds)}"
-        ),
+        f"Prepared {len(chunk_records)} chunks from {len(snapshots)} files for Chroma indexing",
     )
 
-    return dimensions, chunk_records, snapshots
+    return chunk_records, snapshots
 
 
 def _build_state(
@@ -189,7 +138,7 @@ def _build_state(
         index_name=config.name,
         database_path=store_path,
         schema_version=metadata_value(metadata, "schema_version", SCHEMA_VERSION),
-        model_name=metadata_value(metadata, "model_name", config.model),
+        model_name=metadata_value(metadata, "model_name", resolve_model_name(config.model)),
         embedding_dimensions=int(metadata_value(metadata, "embedding_dimensions", "0") or "0"),
         chunking_fingerprint=metadata_value(metadata, "chunking_fingerprint", chunking_fingerprint(config)),
         status=status,
@@ -203,20 +152,35 @@ def _build_state(
 def _rebuild_index(store: IndexStore, root: Path, config: IndexConfig, *, verbose: bool = False) -> None:
     rebuild_started = perf_counter()
     emit_verbose(verbose, "Rebuilding index data")
-    dimensions, chunk_records, snapshots = _build_chunk_records(root, config, verbose=verbose)
+    chunk_records, snapshots = _build_chunk_records(root, config, verbose=verbose)
+    embedding_dimensions = 0
+    if chunk_records:
+        embeddings = embed_texts(
+            [record.document for record in chunk_records],
+            config.model,
+            verbose=verbose,
+        )
+        embedding_dimensions = len(embeddings[0])
+        chunk_records = [
+            record.model_copy(update={"embedding": embedding})
+            for record, embedding in zip(chunk_records, embeddings, strict=True)
+        ]
 
     reset_started = perf_counter()
+    emit_verbose(verbose, "Resetting Chroma collections")
     reset_store(store)
     emit_verbose(verbose, f"Reset Chroma collections in {format_seconds(perf_counter() - reset_started)}")
 
     metadata_started = perf_counter()
-    write_index_metadata(store, config, dimensions)
+    emit_verbose(verbose, "Writing index metadata")
+    write_index_metadata(store, config, embedding_dimensions)
     emit_verbose(verbose, f"Wrote index metadata in {format_seconds(perf_counter() - metadata_started)}")
 
     write_started = perf_counter()
+    emit_verbose(verbose, "Writing snapshot and chunk records")
     replace_index_data(store, snapshots, chunk_records, verbose=verbose)
-    emit_verbose(verbose, f"Wrote snapshot/chunk records in {format_seconds(perf_counter() - write_started)}")
-    emit_verbose(verbose, f"Index rebuild completed in {format_seconds(perf_counter() - rebuild_started)}")
+    emit_verbose(verbose, f"Wrote snapshot and chunk records in {format_seconds(perf_counter() - write_started)}")
+    emit_verbose(verbose, f"Rebuilt index data in {format_seconds(perf_counter() - rebuild_started)}")
 
 
 def _prepare_persistent_index(root: Path, config: IndexConfig, *, verbose: bool = False) -> PreparedIndex:
@@ -224,22 +188,21 @@ def _prepare_persistent_index(root: Path, config: IndexConfig, *, verbose: bool 
     store = open_index_store(store_path, verbose=verbose)
 
     usability_started = perf_counter()
+    emit_verbose(verbose, "Checking index compatibility")
+    usable = False
     usable = index_is_usable(store, config)
-    emit_verbose(
-        verbose, f"Index compatibility check completed in {format_seconds(perf_counter() - usability_started)}"
-    )
+    emit_verbose(verbose, f"Checked index compatibility in {format_seconds(perf_counter() - usability_started)}")
 
     source_scan_started = perf_counter()
+    emit_verbose(verbose, f"Scanning current source files matching {config.filter}")
+    source_paths: list[Path] = []
     source_paths = [path for path, _contents in _load_indexable_sources(root, config.filter)]
     emit_verbose(
         verbose,
         f"Scanned current source files ({len(source_paths)}) in {format_seconds(perf_counter() - source_scan_started)}",
     )
 
-    drift_started = perf_counter()
     drift = detect_snapshot_drift(store, root, source_paths, verbose=verbose) if usable else False
-    if usable:
-        emit_verbose(verbose, f"Snapshot drift check completed in {format_seconds(perf_counter() - drift_started)}")
 
     rebuild = config.mode is IndexMode.REFRESH or not usable or (config.mode is IndexMode.AUTO and drift)
     if rebuild:
@@ -288,6 +251,7 @@ def open_prepared_index(
     """Yield a ready-to-query index store for one operation."""
     parsed_config = parse_index_config(config)
     root = _validate_directory(directory)
+    prepare_started = perf_counter()
     emit_verbose(verbose, f"Preparing index '{parsed_config.name}' in mode '{parsed_config.mode.value}' for {root}")
     if parsed_config.mode is IndexMode.INMEMORY:
         prepared = _prepare_ephemeral_index(root, parsed_config, verbose=verbose)
@@ -295,6 +259,13 @@ def open_prepared_index(
         prepared = _prepare_transient_index(root, parsed_config, verbose=verbose)
     else:
         prepared = _prepare_persistent_index(root, parsed_config, verbose=verbose)
+    emit_verbose(
+        verbose,
+        (
+            f"Prepared index '{parsed_config.name}' in mode '{parsed_config.mode.value}' for {root} in "
+            f"{format_seconds(perf_counter() - prepare_started)}"
+        ),
+    )
     try:
         yield prepared
     finally:

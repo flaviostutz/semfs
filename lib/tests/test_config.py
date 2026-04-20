@@ -14,7 +14,6 @@ def _config_payload() -> dict[str, object]:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -71,4 +70,40 @@ def test_default_index_config_matches_cli_defaults() -> None:
     assert config.chunking.size == 500
     assert config.chunking.overlap == 250
     assert config.chunking.edges is ChunkingEdges.AUTO
-    assert config.model == "sentence-transformers/all-MiniLM-L6-v2"
+    assert config.model.name == "all-MiniLM-L6-v2"
+    assert not config.model.offline_only
+    assert config.model.local_path is None
+
+
+def test_model_config_requires_local_path_when_offline_only_is_enabled() -> None:
+    with pytest.raises(ConfigError):
+        parse_index_config({**_config_payload(), "model": {"name": "custom-model", "offlineOnly": True}})
+
+
+def test_model_config_rejects_provider_field() -> None:
+    with pytest.raises(ConfigError):
+        parse_index_config({**_config_payload(), "model": {"provider": "sentence-transformers"}})
+
+
+def test_load_config_uses_model_values_from_file(tmp_path: Path) -> None:
+    config_path = tmp_path / ".semfsrc"
+    config_path.write_text(
+        json.dumps(
+            {
+                **_config_payload(),
+                "model": {
+                    "name": "all-MiniLM-L6-v2",
+                    "offlineOnly": True,
+                    "localPath": "./cache/custom-model",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config is not None
+    assert config.model.name == "all-MiniLM-L6-v2"
+    assert config.model.offline_only
+    assert config.model.local_path == "./cache/custom-model"

@@ -52,7 +52,7 @@ run: install
 
 dev:
 	@echo ">>> ./lib: dev"
-	$(MISE) uv run --project . python -m $(PACKAGE_NAME) index dist/
+	$(MISE) uv run --project . python -m $(PACKAGE_NAME) index ../.venv/ --verbose
 
 update-lockfile:
 	@echo ">>> ./lib: update-lockfile"

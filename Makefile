@@ -38,12 +38,16 @@ test-integration:
 	$(MAKE) -C lib test-integration
 
 test-examples: build
-	@echo ">>> ./examples: run"
-	$(MAKE) -C examples run
+	@echo ">>> ./examples: test"
+	$(MAKE) -C examples test
 
 run:
 	@echo ">>> ./lib: run"
 	$(MAKE) -C lib run
+
+run-benchmark:
+	@echo ">>> ./examples: run-benchmark"
+	$(MAKE) -C examples run-benchmark
 
 dev: run
 

@@ -1,0 +1,12 @@
+Smart lock reset procedure
+
+Run this procedure only after confirming the resident still has physical access to the door.
+
+Reset steps:
+1. Remove the inside battery cover.
+2. Hold the program button for 10 seconds until the LED flashes red.
+3. Reinsert the battery tray while keeping the button pressed.
+4. Wait for the lock motor to cycle twice.
+5. Re-pair the lock from the installer app.
+
+If the lock fails to pair, verify that the gateway hub is online and within one room of the door.

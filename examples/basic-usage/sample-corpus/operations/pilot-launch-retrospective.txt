@@ -1,0 +1,11 @@
+Pilot launch retrospective notes
+
+The first 50-home rollout exposed three operational gaps:
+1. Installers spent too long locating the correct breaker for powered thermostats.
+2. Zigbee hubs near large televisions had more wireless interference than expected.
+3. Customers needed a simpler explanation of what the gateway does.
+
+Actions agreed:
+- Add a pre-visit note asking residents to clear access to the breaker panel.
+- Include a placement guideline that keeps the hub at least two meters away from major electronics.
+- Create a one-page customer leave-behind with app login and support steps.

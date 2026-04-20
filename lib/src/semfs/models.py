@@ -4,7 +4,7 @@ import re
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 INDEX_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -51,16 +51,57 @@ class ChunkingConfig(BaseModel):
         return self
 
 
+class ModelConfig(BaseModel):
+    """Embedding model configuration used during indexing and search."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    name: str = Field(default="all-MiniLM-L6-v2", min_length=1)
+    offline_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("offlineOnly", "offline_only"),
+        serialization_alias="offlineOnly",
+    )
+    local_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("localPath", "local_path"),
+        serialization_alias="localPath",
+    )
+
+    @field_validator("name")
+    @classmethod
+    def reject_blank_text(cls, value: str) -> str:
+        """Reject blank strings after trimming while preserving the original value."""
+        if not value.strip():
+            raise ValueError("model values must be non-empty after trimming")
+        return value
+
+    @field_validator("local_path")
+    @classmethod
+    def reject_blank_local_path(cls, value: str | None) -> str | None:
+        """Reject blank local_path strings after trimming."""
+        if value is not None and not value.strip():
+            raise ValueError("model.localPath must be non-empty after trimming")
+        return value
+
+    @model_validator(mode="after")
+    def require_local_path_when_offline_only(self) -> "ModelConfig":
+        """Require local_path when offline_only is enabled."""
+        if self.offline_only and not self.local_path:
+            raise ValueError("model.localPath is required when model.offlineOnly is true")
+        return self
+
+
 class IndexConfig(BaseModel):
     """Validated caller-supplied index configuration."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     name: str = Field(min_length=1)
     filter: str = Field(default="**/*", min_length=1)
     mode: IndexMode
     chunking: ChunkingConfig
-    model: str = Field(min_length=1)
+    model: ModelConfig
 
     @field_validator("name")
     @classmethod
@@ -131,7 +172,8 @@ class ChunkRecord(BaseModel):
     file_path: str
     start_line: int = Field(ge=1)
     end_line: int = Field(ge=1)
-    embedding: list[float]
+    document: str = Field(min_length=1)
+    embedding: list[float] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_line_range(self) -> "ChunkRecord":

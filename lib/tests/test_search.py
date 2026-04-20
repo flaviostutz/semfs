@@ -4,13 +4,14 @@ import pytest
 
 import semfs
 from semfs.config import parse_index_config
-from semfs.errors import FileProcessingError
+from semfs.errors import FileProcessingError, IndexStateError
 from semfs.storage import (
     build_file_snapshot,
     chromadb_version,
     chunking_fingerprint,
     detect_snapshot_drift,
     index_is_usable,
+    load_embedding_model,
     open_index_store,
     write_file_snapshots,
     write_index_metadata,
@@ -23,7 +24,6 @@ def _config_payload() -> dict[str, object]:
         "filter": "**/*.md",
         "mode": "auto",
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
-        "model": "sentence-transformers/all-MiniLM-L6-v2",
     }
 
 
@@ -46,7 +46,7 @@ def test_index_metadata_and_snapshot_drift(tmp_path: Path) -> None:
     store = open_index_store(tmp_path / "store")
     config = parse_index_config(_config_payload())
 
-    write_index_metadata(store, config, embedding_dimensions=8)
+    write_index_metadata(store, config, 3)
 
     snapshot = build_file_snapshot(root, file_path, chunk_count=1)
     write_file_snapshots(store, [snapshot])
@@ -70,6 +70,21 @@ def test_chunks_query_merges_contiguous_ranges(sample_docs: Path, fake_model: ob
     assert findings[0].from_line == 1
     assert findings[0].to_line >= 6
     assert findings[0].score > 0.5
+
+
+def test_index_metadata_records_resolved_embedding_model(tmp_path: Path, fake_model: object) -> None:
+    _ = fake_model
+    root = tmp_path / "docs"
+    root.mkdir()
+    file_path = root / "a.md"
+    file_path.write_text("# Title\nbody\n", encoding="utf-8")
+
+    store = open_index_store(tmp_path / "store")
+    config = parse_index_config(_config_payload())
+
+    write_index_metadata(store, config, 3)
+
+    assert index_is_usable(store, config)
 
 
 def test_chunks_returns_verified_contents(sample_docs: Path, fake_model: object) -> None:
@@ -114,3 +129,58 @@ def test_files_query_breaks_score_ties_by_path(sample_docs: Path, fake_model: ob
 
     assert [finding.file for finding in findings] == ["aardvark.md", "zebra.md"]
     assert findings[0].best_score == findings[1].best_score
+
+
+def test_load_embedding_model_requires_local_model_when_offline_only_is_enabled(tmp_path: Path) -> None:
+    load_embedding_model.cache_clear()
+
+    with pytest.raises(IndexStateError) as exc_info:
+        load_embedding_model(
+            "sentence-transformers/all-MiniLM-L6-v2",
+            str(tmp_path / "missing-model"),
+            offline_only=True,
+        )
+
+    load_embedding_model.cache_clear()
+    assert "offline-only mode is enabled" in str(exc_info.value)
+
+
+def test_load_embedding_model_uses_local_path_when_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[str, bool]] = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_source: str, *, local_files_only: bool) -> None:
+            calls.append((model_source, local_files_only))
+
+    local_model = tmp_path / "model"
+    local_model.mkdir()
+    monkeypatch.setattr("semfs.storage.SentenceTransformer", FakeSentenceTransformer)
+    load_embedding_model.cache_clear()
+
+    load_embedding_model("sentence-transformers/all-MiniLM-L6-v2", str(local_model), offline_only=False)
+
+    load_embedding_model.cache_clear()
+    assert calls == [(str(local_model), False)]
+
+
+def test_load_embedding_model_preserves_original_exception_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_message = "boom"
+
+    class FakeSentenceTransformer:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError(original_message)
+
+    monkeypatch.setattr("semfs.storage.SentenceTransformer", FakeSentenceTransformer)
+    load_embedding_model.cache_clear()
+
+    with pytest.raises(IndexStateError) as exc_info:
+        load_embedding_model(
+            "sentence-transformers/all-MiniLM-L6-v2",
+            str(tmp_path / "missing-model"),
+            offline_only=False,
+        )
+
+    load_embedding_model.cache_clear()
+    assert original_message in str(exc_info.value)

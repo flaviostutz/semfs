@@ -1,0 +1,11 @@
+Return merchandise authorization process
+
+Approve an RMA for home electronics only after remote troubleshooting is documented.
+
+Required notes:
+1. Original order number
+2. Device serial number
+3. Failure mode
+4. Whether the customer home lost automation coverage
+
+For gateway hubs, always export the latest diagnostic bundle before issuing the return label.

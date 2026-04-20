@@ -7,8 +7,8 @@ requires-python = ">=3.11"
 dependencies = [
   "numpy>=2.2.0",
   "pydantic>=2.11.0",
-  "sentence-transformers>=5.0.0",
   "chromadb>=0.6.0",
+  "sentence-transformers>=3.4.0",
   "typer>=0.16.0",
 ]
 
@@ -68,6 +68,7 @@ ban-relative-imports = "parents"
 "src/semfs/storage.py" = ["EM102", "FBT001", "FBT002", "FBT003", "TRY003", "PLC0415"]
 "src/semfs/benchmark.py" = ["PLR0913"]
 "src/semfs/verbose.py" = ["FBT001"]
+"tests/conftest.py" = ["A002"]
 "tests/**/*.py" = ["ANN001", "ANN201", "B017", "INP001", "PLR0913", "PLR2004", "PT011", "S101", "S108", "SLF001"]
 "tests_integration/**/*.py" = ["ANN001", "ANN201", "B017", "INP001", "PLR0913", "PLR2004", "PT011", "S101", "S108", "SLF001"]
 

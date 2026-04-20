@@ -1,0 +1,11 @@
+Home network survey
+
+Collect this information before installing connected electronics for home management.
+
+- Router brand and age
+- Whether there are mesh repeaters
+- Typical location of the modem
+- Distance from router to thermostat and front door
+- Nearby electronics that may create interference
+
+Mark the site as high-risk when the router is inside a metal cabinet or when the lock and thermostat are on different floors with no repeater.

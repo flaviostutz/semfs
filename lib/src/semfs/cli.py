@@ -43,11 +43,16 @@ def root(
 def index(
     directory: Path,
     config: Annotated[Path | None, typer.Option("--config", help="Path to a JSON config file.")] = None,
+    offline: Annotated[bool, typer.Option("--offline", help="Force offline mode, disabling model downloads.")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
     """Create or refresh the scaffolded index state."""
     try:
         loaded_config = _require_loaded_config(config)
+        if offline:
+            loaded_config = loaded_config.model_copy(
+                update={"model": loaded_config.model.model_copy(update={"offline_only": True})}
+            )
         typer.echo(f"Starting index '{loaded_config.name}' for {directory}")
         state = semfs.index(str(directory), loaded_config, verbose=verbose)
         if verbose:
@@ -66,11 +71,16 @@ def chunks(
     distance: Annotated[float | None, typer.Option("--distance", min=0.0, help="Optional distance limit.")] = None,
     contents: Annotated[bool, typer.Option("--contents", help="Include excerpt contents.")] = False,
     config: Annotated[Path | None, typer.Option("--config", help="Path to a JSON config file.")] = None,
+    offline: Annotated[bool, typer.Option("--offline", help="Force offline mode, disabling model downloads.")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
     """Return chunk query results."""
     try:
         loaded_config = _require_loaded_config(config)
+        if offline:
+            loaded_config = loaded_config.model_copy(
+                update={"model": loaded_config.model.model_copy(update={"offline_only": True})}
+            )
         results = semfs.chunks(
             {"text": query, "max_results": top, "max_distance": distance},
             str(directory),
@@ -81,7 +91,9 @@ def chunks(
         for finding in results:
             typer.echo(f"{finding.file}[{finding.from_line}:{finding.to_line}]")
             if contents and finding.contents is not None:
+                typer.echo("---")
                 typer.echo(finding.contents)
+                typer.echo("---")
         if verbose:
             typer.echo(f"Returned {len(results)} chunk results for {directory}")
     except SemfsError as exc:
@@ -96,11 +108,16 @@ def files(
     top: Annotated[int, typer.Option("--top", min=1, help="Maximum number of results.")] = 10,
     distance: Annotated[float | None, typer.Option("--distance", min=0.0, help="Optional distance limit.")] = None,
     config: Annotated[Path | None, typer.Option("--config", help="Path to a JSON config file.")] = None,
+    offline: Annotated[bool, typer.Option("--offline", help="Force offline mode, disabling model downloads.")] = False,
     verbose: Annotated[bool, typer.Option("--verbose", help="Show extra detail.")] = False,
 ) -> None:
     """Return deduplicated file query results."""
     try:
         loaded_config = _require_loaded_config(config)
+        if offline:
+            loaded_config = loaded_config.model_copy(
+                update={"model": loaded_config.model.model_copy(update={"offline_only": True})}
+            )
         results = semfs.files(
             {"text": query, "max_results": top, "max_distance": distance},
             str(directory),
