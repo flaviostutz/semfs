@@ -66,4 +66,5 @@ clean:
 
 bump:
 	@echo ">>> .: bump"
-	$(MISE) npx -y filedist@latest --packages git:github.com/flaviostutz/agentme.git
+	$(MISE) npx -y agentme@latest 
+# 	$(MISE) npx -y filedist@latest --packages git:github.com/flaviostutz/agentme.git

@@ -78,3 +78,6 @@ AGENTS.md|xdrs-core|0.14.5
 .xdrs/agentme/edrs/devops/005-monorepo-structure.md|https://github.com/flaviostutz/agentme.git|33d89bdc296cc5faed6c6de5a55165b7f49323dd
 .xdrs/agentme/edrs/devops/008-common-targets.md|https://github.com/flaviostutz/agentme.git|33d89bdc296cc5faed6c6de5a55165b7f49323dd
 .xdrs/agentme/edrs/index.md|https://github.com/flaviostutz/agentme.git|33d89bdc296cc5faed6c6de5a55165b7f49323dd
+.xdrs/_core/adrs/principles/008-xdr-standards-structured.md|xdrs-core|0.17.0
+.xdrs/_core/bdrs/index.md|xdrs-core|0.17.0
+.xdrs/_core/bdrs/principles/001-xdr-decisions-and-skills-usage.md|xdrs-core|0.17.0

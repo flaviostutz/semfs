@@ -4,7 +4,9 @@ Semantic file queries for local folders via a Python library and CLI.
 
 This utility can be used in RAG applications to enrich the context sent to LLMs by retrieving the most semantically relevant file chunks for a given query by simply pointing it to an existing filesystem.
 
-All the heavy lifting of preparing models, scanning and opening files, chunking, indexing and querying is performed by semfs.
+All the heavy lifting of preparing models, scanning and opening files, chunking, embedding, indexing and querying is performed by semfs.
+
+All the embedding is performed locally.
 
 ## Getting Started
 
