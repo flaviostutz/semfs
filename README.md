@@ -15,7 +15,7 @@ No install needed — run `semfs` directly with [uvx](https://docs.astral.sh/uv/
 ### Search for relevant file chunks
 
 ```sh
-# In the first run will download a model (~90MB) and index ./docs folder. Follow up runs are supposed to be way faster then :)
+# The all-MiniLM-L6-v2 model (~90MB) is bundled with the package — no download needed.
 uvx semfs chunks ./docs "how do I configure authentication?" --top 3 --contents
 ```
 
@@ -66,9 +66,7 @@ Place a `.semfsrc` JSON file in your working directory to control how `semfs` in
     "edges": "auto"
   },
   "model": {
-    "name": "all-MiniLM-L6-v2",
-    "offlineOnly": true,
-    "localPath": "./cache/all-MiniLM-L6-v2"
+    "name": "all-MiniLM-L6-v2"
   }
 }
 ```
@@ -81,9 +79,9 @@ Place a `.semfsrc` JSON file in your working directory to control how `semfs` in
 | `chunking.size` | `500` | Maximum number of tokens per chunk. |
 | `chunking.overlap` | `250` | Number of tokens that overlap between consecutive chunks. Must be less than `size`. |
 | `chunking.edges` | `auto` | Chunk boundary strategy. `auto` splits on natural text boundaries; `fixed` splits at a fixed token count. |
-| `model.name` | `all-MiniLM-L6-v2` | Sentence-Transformers model name used for embedding. |
-| `model.offlineOnly` | `false` | When `true`, the model is loaded only from `localPath` and no download is attempted. Requires `localPath`. |
-| `model.localPath` | `./cache/all-MiniLM-L6-v2` | Path to a pre-downloaded model directory. |
+| `model.name` | `all-MiniLM-L6-v2` | Sentence-Transformers model name used for embedding. The default model is bundled with the package via `gt-all-minilm-l6-v2` and works fully offline with no additional setup. |
+| `model.offlineOnly` | `false` | When `true`, the model is loaded only from `localPath` and no download is attempted. Required `localPath` for custom models; not needed for the default `all-MiniLM-L6-v2` model which is always loaded from the bundled package. |
+| `model.localPath` | — | Path to a local model directory. Use this to override the bundled default or to specify a custom model location. |
 
 You can also point to a custom config file with the `--config` CLI flag:
 
@@ -180,7 +178,7 @@ for r in results:
 
 The published Python package lives in `lib/` and runnable consumer projects live in `examples/`.
 
-The default embedding model is local-first. `semfs` expects a pre-downloaded `sentence-transformers/all-MiniLM-L6-v2` model directory at `./cache/all-MiniLM-L6-v2` unless you override the model config or explicitly enable auto-download.
+The default embedding model (`all-MiniLM-L6-v2`) is bundled with the `semfs` package via the `gt-all-minilm-l6-v2` dependency. No pre-download or network access is required. Custom models can be configured via `model.name` and `model.localPath` in `.semfsrc`.
 
 ## Repository Layout
 

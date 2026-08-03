@@ -136,13 +136,34 @@ def test_load_embedding_model_requires_local_model_when_offline_only_is_enabled(
 
     with pytest.raises(IndexStateError) as exc_info:
         load_embedding_model(
-            "sentence-transformers/all-MiniLM-L6-v2",
+            "sentence-transformers/custom-model",
             str(tmp_path / "missing-model"),
             offline_only=True,
         )
 
     load_embedding_model.cache_clear()
     assert "offline-only mode is enabled" in str(exc_info.value)
+
+
+def test_load_embedding_model_uses_bundled_path_for_default_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundled_path = tmp_path / "bundled-model"
+    bundled_path.mkdir()
+    calls: list[tuple[str, bool]] = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_source: str, *, local_files_only: bool) -> None:
+            calls.append((model_source, local_files_only))
+
+    monkeypatch.setattr("semfs.storage.gt_all_minilm_l6_v2.get_model_path", lambda: bundled_path)
+    monkeypatch.setattr("semfs.storage.SentenceTransformer", FakeSentenceTransformer)
+    load_embedding_model.cache_clear()
+
+    load_embedding_model("sentence-transformers/all-MiniLM-L6-v2", None, offline_only=False)
+
+    load_embedding_model.cache_clear()
+    assert calls == [(str(bundled_path), True)]
 
 
 def test_load_embedding_model_uses_local_path_when_available(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

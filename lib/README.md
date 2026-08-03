@@ -19,9 +19,7 @@ Default CLI config:
     "edges": "auto"
   },
   "model": {
-    "name": "all-MiniLM-L6-v2",
-    "autoDownload": false,
-    "localPath": "./cache/all-MiniLM-L6-v2"
+    "name": "all-MiniLM-L6-v2"
   }
 }
 ```
@@ -39,9 +37,7 @@ Optional `.semfsrc` override:
     "edges": "auto"
   },
   "model": {
-    "name": "all-MiniLM-L6-v2",
-    "autoDownload": false,
-    "localPath": "./cache/all-MiniLM-L6-v2"
+    "name": "all-MiniLM-L6-v2"
   }
 }
 ```
@@ -50,12 +46,11 @@ From a source checkout, prepare the shared environment once and run the installe
 
 ```sh
 make setup
-make -C examples download-model
 ./.venv/bin/semfs index docs
 ./.venv/bin/semfs chunks docs "what is x?" --top 5
 ```
 
-semfs uses sentence-transformers directly. Configure model loading through `.semfsrc` or the config object you pass to the library. When `model.autoDownload` is `false`, semfs loads the model from `model.localPath` only. When `model.autoDownload` is `true`, semfs will try the local path first and otherwise let sentence-transformers download and cache the model.
+The default `all-MiniLM-L6-v2` model is bundled with the package via `gt-all-minilm-l6-v2` and works fully offline with no pre-download or network access required. To use a custom model, set `model.name` and optionally `model.localPath` in `.semfsrc`; custom models with `model.offlineOnly: true` require `model.localPath`.
 
 ## Using semfs
 
@@ -117,10 +112,9 @@ Successful `index` runs print a start message and a completion message with inde
 The `examples/basic-usage/sample-corpus/` directory contains a ready-made corpus you can use to try the CLI immediately after setup.
 
 ```sh
-# from the repository root, after running `make setup` and downloading the model
-make -C examples download-model
+# from the repository root, after running `make setup`
 
-# index the sample corpus (uses default config, model at ./cache/all-MiniLM-L6-v2)
+# index the sample corpus
 cd examples/basic-usage
 mise exec -- uv run --project . semfs index sample-corpus
 
@@ -151,11 +145,9 @@ config = {
     "filter": "**/*.md",
     "mode": "auto",
     "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-  "model": {
-    "name": "all-MiniLM-L6-v2",
-    "autoDownload": False,
-    "localPath": "./cache/all-MiniLM-L6-v2",
-  },
+    "model": {
+        "name": "all-MiniLM-L6-v2",
+    },
 }
 
 state = semfs.index("docs", config)
@@ -172,11 +164,9 @@ config = {
     "filter": "**/*.md",
     "mode": "auto",
     "chunking": {"size": 500, "overlap": 250, "edges": "auto"},
-  "model": {
-    "name": "all-MiniLM-L6-v2",
-    "autoDownload": False,
-    "localPath": "./cache/all-MiniLM-L6-v2",
-  },
+    "model": {
+        "name": "all-MiniLM-L6-v2",
+    },
 }
 query = {"text": "what is x?", "max_results": 5}
 
@@ -189,7 +179,7 @@ print(files)
 
 If excerpt contents are requested and any selected file no longer matches the indexed snapshot or cannot be read, the whole query fails with an actionable error.
 
-If the configured local model directory is missing and `model.autoDownload` is `false`, indexing and query operations fail with an actionable local-model error.
+If the configured local model directory is missing and `model.offlineOnly` is `true`, indexing and query operations fail with an actionable local-model error.
 
 ## Development
 

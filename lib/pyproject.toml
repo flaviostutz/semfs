@@ -10,6 +10,7 @@ dependencies = [
   "chromadb>=0.6.0",
   "sentence-transformers>=3.4.0",
   "typer>=0.16.0",
+  "gt-all-minilm-l6-v2>=0.1.0",
 ]
 
 [[project.authors]]

@@ -10,3 +10,4 @@ lib/dist/
 __pycache__/
 *.pyc
 benchmarks/
+.mypy_cache/

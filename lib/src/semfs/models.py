@@ -86,8 +86,9 @@ class ModelConfig(BaseModel):
 
     @model_validator(mode="after")
     def require_local_path_when_offline_only(self) -> "ModelConfig":
-        """Require local_path when offline_only is enabled."""
-        if self.offline_only and not self.local_path:
+        """Require local_path when offline_only is enabled, except for the default bundled model."""
+        _bundled_model_name = "all-MiniLM-L6-v2"
+        if self.offline_only and not self.local_path and self.name != _bundled_model_name:
             raise ValueError("model.localPath is required when model.offlineOnly is true")
         return self
 

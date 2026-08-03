@@ -37,7 +37,7 @@ The public module remains `semfs` and exposes one indexing entry point plus one 
   - Returns file paths relative to the indexed directory
   - Includes `contents` only when `fetch_contents=True`
   - Fails the whole query with an actionable error if `fetch_contents=True` and any selected file no longer matches the indexed snapshot or cannot be read
-  - Fails with an actionable error if the configured local model directory is unavailable while `model.autoDownload=false`, including when a reusable index references that model
+  - Fails with an actionable error if the configured local model directory is unavailable while `model.offlineOnly=true` and no bundled fallback applies, including when a reusable index references that model
 
 ### `semfs.files(query, dir, config)`
 
@@ -58,7 +58,7 @@ The public module remains `semfs` and exposes one indexing entry point plus one 
 
 The library raises typed domain exceptions for invalid config, missing indexes in unsupported states, unavailable models, including reusable indexes whose stored model is not available locally, or unreadable files.
 
-`IndexConfig.model` is a nested object with `name`, `autoDownload`, and `localPath`. `name` defaults to `all-MiniLM-L6-v2`, `autoDownload` defaults to `false`, and `localPath` must point to an extracted local model directory. semfs always uses sentence-transformers as the embedding backend.
+`IndexConfig.model` is a nested object with `name`, `offlineOnly`, and `localPath`. `name` defaults to `all-MiniLM-L6-v2`, which is bundled with the package via `gt-all-minilm-l6-v2` and always available offline without any pre-download or configuration. `offlineOnly` defaults to `false` and is only required for custom models where a `localPath` must also be provided. `localPath` is optional for the default model and can be used to override the bundled path. semfs always uses sentence-transformers as the embedding backend.
 
 Library exception messages are actionable only when they include all of the following that are known at the failure point:
 

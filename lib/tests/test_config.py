@@ -80,6 +80,13 @@ def test_model_config_requires_local_path_when_offline_only_is_enabled() -> None
         parse_index_config({**_config_payload(), "model": {"name": "custom-model", "offlineOnly": True}})
 
 
+def test_model_config_allows_offline_only_for_default_model_without_local_path() -> None:
+    config = parse_index_config({**_config_payload(), "model": {"name": "all-MiniLM-L6-v2", "offlineOnly": True}})
+    assert config.model.name == "all-MiniLM-L6-v2"
+    assert config.model.offline_only
+    assert config.model.local_path is None
+
+
 def test_model_config_rejects_provider_field() -> None:
     with pytest.raises(ConfigError):
         parse_index_config({**_config_payload(), "model": {"provider": "sentence-transformers"}})

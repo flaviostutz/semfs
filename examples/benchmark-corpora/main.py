@@ -13,9 +13,7 @@ def main() -> None:
         "chunking": {"size": 240, "overlap": 40, "edges": "auto"},
         "model": {
             "name": "all-MiniLM-L6-v2",
-            "offlineOnly": True,
-            "localPath": "./.cache/all-MiniLM-L6-v2",
-        },        
+        },
     }
     output_dir = Path(__file__).resolve().parents[2] / "benchmarks"
     try:

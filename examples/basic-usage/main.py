@@ -18,8 +18,6 @@ def main() -> None:
         "chunking": {"size": 120, "overlap": 30, "edges": "auto"},
         "model": {
             "name": "all-MiniLM-L6-v2",
-            "offlineOnly": True,
-            "localPath": "./.cache/all-MiniLM-L6-v2",
         },
     }
     try:

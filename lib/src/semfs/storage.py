@@ -10,6 +10,7 @@ from time import perf_counter
 from typing import Any
 
 import chromadb
+import gt_all_minilm_l6_v2
 from sentence_transformers import SentenceTransformer
 
 from semfs.errors import IndexStateError
@@ -18,6 +19,7 @@ from semfs.verbose import emit_verbose, format_seconds
 
 SCHEMA_VERSION = "3"
 DEFAULT_EMBEDDING_BACKEND = "sentence-transformers"
+_BUNDLED_MODEL_NAME = "all-MiniLM-L6-v2"
 _DUMMY_EMBEDDING: list[float] = [0.0]
 _CHROMA_BATCH_SIZE = 500
 _EMBED_BATCH_SIZE = 256
@@ -64,6 +66,12 @@ def load_embedding_model(
     model_name: str, local_path: str | None, offline_only: bool, *, verbose: bool = False
 ) -> SentenceTransformer:
     """Load and cache one sentence-transformers model per configured name."""
+    # When no local_path is provided for the default bundled model, resolve the path
+    # from the gt-all-minilm-l6-v2 package so it works offline without any configuration.
+    if local_path is None and model_name == f"{DEFAULT_EMBEDDING_BACKEND}/{_BUNDLED_MODEL_NAME}":
+        local_path = str(gt_all_minilm_l6_v2.get_model_path())
+        offline_only = True
+
     local_files_only = offline_only
 
     if local_path is not None:
@@ -80,6 +88,8 @@ def load_embedding_model(
             if local_files_only
             else f"local-first loading from {local_model_path} with sentence-transformers download fallback"
         )
+        if local_path == str(gt_all_minilm_l6_v2.get_model_path()):
+            load_strategy = "bundled package (gt-all-minilm-l6-v2)"
     else:
         model_source = model_name
         load_strategy = "downloading from sentence-transformers"
